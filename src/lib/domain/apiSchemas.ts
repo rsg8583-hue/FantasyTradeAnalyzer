@@ -51,7 +51,8 @@ export type ConnectRequest = z.infer<typeof connectRequestSchema>;
 export const demoRequestSchema = z.object({ sport: sportSchema });
 
 const leagueNameSchema = z.string().trim().min(1, "Enter a name.").max(60);
-const playerId = z.number().int().positive();
+// ESPN gives team defenses (D/ST) negative ids, e.g. -16014 for the Rams.
+const playerId = z.number().int();
 
 export const createCustomRequestSchema = z.object({
   name: leagueNameSchema,
@@ -76,7 +77,7 @@ export const playerSearchSchema = z.object({
   limit: z.coerce.number().int().min(1).max(60).optional().default(40),
 });
 
-const playerIdList = z.array(z.number().int().nonnegative()).max(30);
+const playerIdList = z.array(playerId).max(30);
 
 export const tradeSideSchema = z.object({
   teamId: z.number().int(),
