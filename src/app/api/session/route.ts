@@ -3,12 +3,12 @@ import { SESSION_COOKIE, assertSameOrigin, clearSessionCookie, errorResponse, no
 import { leagueState } from "@/lib/server/state";
 import { sessionStore } from "@/lib/session/store";
 import { accountStore } from "@/lib/accounts/store";
-import { currentUser } from "@/lib/server/accounts";
+import { AUTH_COOKIE, currentUser } from "@/lib/server/accounts";
 
 /** Current session state without contacting ESPN. */
 export async function GET(req: NextRequest) {
   try {
-    return NextResponse.json(leagueState(requireSession(req)), { headers: noStore });
+    return NextResponse.json(leagueState(await requireSession(req)), { headers: noStore });
   } catch (e) {
     return errorResponse(e);
   }
@@ -23,10 +23,13 @@ export async function DELETE(req: NextRequest) {
     assertSameOrigin(req);
     const id = req.cookies.get(SESSION_COOKIE)?.value;
     if (id) sessionStore().delete(id);
-    const user = currentUser(req);
-    if (user) {
-      sessionStore().deleteForUser(user.id);
-      accountStore().setActiveLeague(user.id, null);
+    if (req.cookies.has(AUTH_COOKIE)) {
+      const accounts = await accountStore();
+      const user = await currentUser(req, accounts);
+      if (user) {
+        sessionStore().deleteForUser(user.id);
+        await accounts.setActiveLeague(user.id, null);
+      }
     }
     const res = NextResponse.json({ connected: false }, { headers: noStore });
     clearSessionCookie(res);

@@ -1,5 +1,4 @@
 import "server-only";
-import { accountStore } from "@/lib/accounts/store";
 import type { SessionData } from "@/lib/session/store";
 import { syncStatus } from "./leagueService";
 import type { LeagueStateResponse } from "@/lib/domain/apiTypes";
@@ -20,7 +19,5 @@ export function leagueState(session: SessionData): LeagueStateResponse {
 }
 
 function accountFor(session: SessionData): LeagueStateResponse["account"] {
-  if (session.userId === null) return null;
-  const user = accountStore().userById(session.userId);
-  return user ? { username: user.username, saved: session.savedLeagueId !== null } : null;
+  return session.userId !== null && session.username !== null ? { username: session.username, saved: session.savedLeagueId !== null } : null;
 }

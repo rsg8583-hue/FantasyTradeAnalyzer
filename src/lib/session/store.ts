@@ -29,8 +29,11 @@ export interface SessionData {
   customLeague: CustomLeague | null;
   /** Signed-in owner, or null for a guest. */
   userId: number | null;
+  username: string | null;
   /** Row id of the saved copy of customLeague; edits are written back to it. */
   savedLeagueId: number | null;
+  /** Version of the saved copy that customLeague matches. */
+  savedVersion: number | null;
   snapshot: LeagueSnapshot | null;
   sync: SyncState;
   inflight: Promise<LeagueSnapshot> | null;
@@ -47,7 +50,7 @@ export type SessionLookup =
   | { status: "missing" };
 
 export type SessionInit = Pick<SessionData, "mode" | "locator" | "credentials" | "customLeague"> &
-  Partial<Pick<SessionData, "userId" | "savedLeagueId">>;
+  Partial<Pick<SessionData, "userId" | "username" | "savedLeagueId" | "savedVersion">>;
 
 export interface SessionStore {
   create(init: SessionInit): SessionData;
@@ -80,7 +83,9 @@ export class MemorySessionStore implements SessionStore {
       lastAccessAt: t,
       expiresAt: t + ABSOLUTE_TTL_MS,
       userId: null,
+      username: null,
       savedLeagueId: null,
+      savedVersion: null,
       ...init,
       snapshot: null,
       sync: { lastSuccessAt: null, lastAttemptAt: null, lastError: null },

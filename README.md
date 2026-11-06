@@ -36,7 +36,17 @@ npm run dev                  # http://localhost:3000
 | `OPENAI_API_KEY` | No | Without it, results show a deterministic explanation and an "AI not configured" notice. |
 | `OPENAI_MODEL` | With the key | A Responses-API model that supports structured outputs. |
 | `AI_PROVIDER` | No | Defaults to `openai` (the only provider implemented). |
-| `DATABASE_PATH` | No | SQLite file for accounts and saved leagues. Defaults to `data/app.db` (created on first use, gitignored). |
+| `DATABASE_PATH` | No | Local SQLite file for accounts and saved leagues. Defaults to `data/app.db` (created on first use, gitignored). Ignored when `TURSO_DATABASE_URL` is set. |
+| `TURSO_DATABASE_URL` | On Vercel | Hosted [Turso](https://turso.tech) database (`libsql://…`) for accounts. Required on Vercel and other read-only hosts; without it, sign-in shows "Accounts aren't set up" and the rest of the app works as a guest. |
+| `TURSO_AUTH_TOKEN` | With the URL | Turso database token. |
+
+### Deploying to Vercel with accounts
+
+1. Install the Turso CLI and sign in: `brew install tursodatabase/tap/turso && turso auth signup`.
+2. `turso db create fantasy-trade-analyzer`
+3. `turso db show fantasy-trade-analyzer --url` → set as `TURSO_DATABASE_URL` in Vercel (Project → Settings → Environment Variables).
+4. `turso db tokens create fantasy-trade-analyzer` → set as `TURSO_AUTH_TOKEN`.
+5. Redeploy. Tables are created automatically on first use.
 
 No ESPN credentials are ever needed or stored. The player pool is public.
 
@@ -73,7 +83,7 @@ src/lib/league/       Scoring + roster presets (PPR, Half-PPR, Standard, basketb
 src/lib/custom/       Custom-league model, mutation rules, and the snapshot builder.
 src/lib/demo/         Fictional fixture provider (same LeagueProvider interface).
 src/lib/session/      Expiring server-side session store (opaque id → league + snapshot).
-src/lib/accounts/     Password hashing and the SQLite store for users, login tokens, and saved leagues.
+src/lib/accounts/     Password hashing and the SQLite/Turso store for users, login tokens, and saved leagues.
 src/lib/server/       Route helpers (origin checks, cookies, rate limits) and league sync.
 src/lib/projections/  Projection providers: full-season (custom) and weekly/daily (demo), plus scoring.
 src/lib/engine/       Lineup optimizer (Hungarian) and trade validation/calculation.
@@ -90,11 +100,11 @@ The old ESPN **league-linking** adapter (`src/lib/espn/provider.ts`, `leagueInpu
 
 - **No ESPN credentials.** The app uses ESPN's public player pool, so there are no cookies or passwords to handle.
 - **Session.** A league lives in server memory, keyed by a random 256-bit session id. The browser holds that id in an `HttpOnly`, `SameSite=Strict` cookie (`Secure` outside localhost). Sessions expire after 2 hours idle or 12 hours total.
-- **Accounts.** Passwords are hashed with scrypt (random salt per user). Signing in sets a separate 30-day `HttpOnly`, `SameSite=Strict` cookie holding a random token; the database stores only its SHA-256 hash. Every saved-league query is scoped to the signed-in user. Sign-in and sign-up attempts are limited to 10 per username and 30 per address per 15 minutes, and unknown usernames take as long to reject as wrong passwords.
+- **Accounts.** Guests never touch the database; it's opened only for requests with a sign-in cookie. Passwords are hashed with scrypt (random salt per user). Signing in sets a separate 30-day `HttpOnly`, `SameSite=Strict` cookie holding a random token; the database stores only its SHA-256 hash. Every saved-league query is scoped to the signed-in user. Sign-in and sign-up attempts are limited to 10 per username and 30 per address per 15 minutes, and unknown usernames take as long to reject as wrong passwords.
 - **Requests.** State-changing routes require a same-origin `Origin` header. Inputs are schema-validated.
 - **Outbound ESPN calls.** URLs are built only from an allowlisted host (`lm-api-reads.fantasy.espn.com`), fixed path patterns, and allowlisted views/filters. Redirects are not followed.
 - **Rate limits per session.** Player pool: cached 6 hours, shared across callers. Search: 60/min. Edits: 120/min. Analyze: 30/min. AI explanations: 10 per 10 minutes, cached per trade.
-- **Deployment caveat.** The in-memory session store and player-pool cache are for a single server instance. Running several instances needs a shared store (the session code has an interface for one). A restart clears both, but signed-in users' leagues are restored from the database. The SQLite file needs a persistent disk, so serverless hosts that discard local files (e.g. Vercel) would need a hosted database instead.
+- **Deployment caveat.** The in-memory session store and player-pool cache are for a single server instance. Running several instances needs a shared store (the session code has an interface for one). A restart clears both, but signed-in users' leagues are restored from the database. Each saved league has a version number that goes up on every save, so a server instance with an out-of-date copy reloads it instead of overwriting newer edits; this keeps signed-in leagues consistent across Vercel's multiple instances. Guest leagues remain per-instance.
 
 ## ESPN data: unofficial, with limitations
 

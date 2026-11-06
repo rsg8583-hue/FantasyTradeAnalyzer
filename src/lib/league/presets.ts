@@ -56,7 +56,7 @@ const FOOTBALL_SLOTS: RosterSlot[] = [
   { slotId: 23, name: "FLEX", count: 1, kind: "starter" },
   { slotId: 16, name: "D/ST", count: 1, kind: "starter" },
   { slotId: 17, name: "K", count: 1, kind: "starter" },
-  { slotId: 20, name: "BE", count: 6, kind: "bench" },
+  { slotId: 20, name: "BE", count: 7, kind: "bench" },
   { slotId: 21, name: "IR", count: 1, kind: "ir" },
 ];
 
@@ -86,7 +86,7 @@ const BASKETBALL_SLOTS: RosterSlot[] = [
   { slotId: 5, name: "G", count: 1, kind: "starter" },
   { slotId: 6, name: "F", count: 1, kind: "starter" },
   { slotId: 11, name: "UT", count: 3, kind: "starter" },
-  { slotId: 12, name: "BE", count: 3, kind: "bench" },
+  { slotId: 12, name: "BE", count: 6, kind: "bench" },
   { slotId: 13, name: "IR", count: 1, kind: "ir" },
 ];
 

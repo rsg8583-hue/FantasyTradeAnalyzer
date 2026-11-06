@@ -15,12 +15,12 @@ export async function POST(req: NextRequest) {
     const { username, password } = parsed.data;
     if (!allowAuthAttempt(req, username)) throw new AppError("RATE_LIMITED", "Too many attempts. Try again in a few minutes.");
 
-    const accounts = accountStore();
-    const user = accounts.createUser(username, await hashPassword(password));
+    const accounts = await accountStore();
+    const user = await accounts.createUser(username, await hashPassword(password));
     if (!user) throw new AppError("CONFLICT", "That username is taken.");
-    adoptGuestSession(req.cookies.get(SESSION_COOKIE)?.value, user);
+    await adoptGuestSession(req.cookies.get(SESSION_COOKIE)?.value, user, accounts);
     const res = NextResponse.json({ user: { username: user.username } }, { headers: noStore });
-    setAuthCookie(res, accounts.createToken(user.id), req);
+    setAuthCookie(res, await accounts.createToken(user.id), req);
     return res;
   } catch (e) {
     return errorResponse(e);

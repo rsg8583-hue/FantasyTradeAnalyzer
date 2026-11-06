@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import Database from "better-sqlite3";
+import type { Client, InStatement } from "@libsql/client";
 import type { CustomLeague } from "@/lib/custom/types";
+import { AppError } from "@/lib/domain/errors";
 import type { Sport } from "@/lib/domain/types";
 
 export const AUTH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -22,154 +23,200 @@ export interface SavedLeagueSummary {
   active: boolean;
 }
 
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS users (
-  id INTEGER PRIMARY KEY,
-  username TEXT NOT NULL UNIQUE COLLATE NOCASE,
-  password_hash TEXT NOT NULL,
-  active_league_id INTEGER,
-  created_at INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS auth_tokens (
-  token_hash TEXT PRIMARY KEY,
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  expires_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS auth_tokens_user ON auth_tokens(user_id);
-CREATE TABLE IF NOT EXISTS leagues (
-  id INTEGER PRIMARY KEY,
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  data TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS leagues_user ON leagues(user_id);
-`;
+/** A saved league plus its version, which goes up by one on every save. */
+export interface SavedLeague {
+  id: number;
+  league: CustomLeague;
+  version: number;
+}
+
+const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    password_hash TEXT NOT NULL,
+    active_league_id INTEGER,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS auth_tokens (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL
+  )`,
+  "CREATE INDEX IF NOT EXISTS auth_tokens_user ON auth_tokens(user_id)",
+  `CREATE TABLE IF NOT EXISTS leagues (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    data TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  "CREATE INDEX IF NOT EXISTS leagues_user ON leagues(user_id)",
+];
 
 /** Only a hash of each login token is stored, so a leaked database can't be used to sign in. */
 const hashToken = (token: string) => createHash("sha256").update(token).digest("base64url");
 
 /**
- * Accounts, login tokens, and saved custom leagues in SQLite. Every league
- * query is scoped by user id, so one user can never read or change another's.
+ * Accounts, login tokens, and saved custom leagues in SQLite (a local file, or
+ * Turso when deployed). Every league query is scoped by user id, so one user
+ * can never read or change another's.
  */
 export class AccountStore {
+  private ready: Promise<void> | null = null;
+
   constructor(
-    private readonly db: Database.Database,
+    private readonly db: Client,
     private readonly now: () => number = Date.now,
-  ) {
-    db.pragma("foreign_keys = ON");
-    db.exec(SCHEMA);
+  ) {}
+
+  private async run(stmt: InStatement) {
+    this.ready ??= this.db.batch(SCHEMA, "write").then(
+      () => undefined,
+      (e) => {
+        this.ready = null;
+        throw e;
+      },
+    );
+    await this.ready;
+    return this.db.execute(stmt);
   }
 
   /** Returns null if the username is taken (case-insensitive). */
-  createUser(username: string, passwordHash: string): AccountUser | null {
-    try {
-      const r = this.db.prepare("INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)").run(username, passwordHash, this.now());
-      return { id: Number(r.lastInsertRowid), username };
-    } catch (e) {
-      if ((e as { code?: string }).code === "SQLITE_CONSTRAINT_UNIQUE") return null;
-      throw e;
-    }
+  async createUser(username: string, passwordHash: string): Promise<AccountUser | null> {
+    const r = await this.run({
+      sql: "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?) ON CONFLICT(username) DO NOTHING RETURNING id",
+      args: [username, passwordHash, this.now()],
+    });
+    return r.rows.length ? { id: Number(r.rows[0].id), username } : null;
   }
 
-  findUser(username: string): (AccountUser & { passwordHash: string }) | null {
-    const row = this.db.prepare("SELECT id, username, password_hash FROM users WHERE username = ?").get(username) as
-      | { id: number; username: string; password_hash: string }
-      | undefined;
-    return row ? { id: row.id, username: row.username, passwordHash: row.password_hash } : null;
+  async findUser(username: string): Promise<(AccountUser & { passwordHash: string }) | null> {
+    const r = await this.run({ sql: "SELECT id, username, password_hash FROM users WHERE username = ?", args: [username] });
+    const row = r.rows[0];
+    return row ? { id: Number(row.id), username: String(row.username), passwordHash: String(row.password_hash) } : null;
   }
 
-  userById(id: number): AccountUser | null {
-    return (this.db.prepare("SELECT id, username FROM users WHERE id = ?").get(id) as AccountUser | undefined) ?? null;
-  }
-
-  createToken(userId: number): string {
+  async createToken(userId: number): Promise<string> {
     const token = randomBytes(32).toString("base64url");
-    this.db.prepare("DELETE FROM auth_tokens WHERE expires_at <= ?").run(this.now());
-    this.db.prepare("INSERT INTO auth_tokens (token_hash, user_id, expires_at) VALUES (?, ?, ?)").run(hashToken(token), userId, this.now() + AUTH_TTL_MS);
+    await this.run({ sql: "DELETE FROM auth_tokens WHERE expires_at <= ?", args: [this.now()] });
+    await this.run({ sql: "INSERT INTO auth_tokens (token_hash, user_id, expires_at) VALUES (?, ?, ?)", args: [hashToken(token), userId, this.now() + AUTH_TTL_MS] });
     return token;
   }
 
-  userForToken(token: string): AccountUser | null {
-    const row = this.db
-      .prepare("SELECT u.id, u.username, t.expires_at FROM auth_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ?")
-      .get(hashToken(token)) as (AccountUser & { expires_at: number }) | undefined;
+  async userForToken(token: string): Promise<AccountUser | null> {
+    const r = await this.run({
+      sql: "SELECT u.id, u.username, t.expires_at FROM auth_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ?",
+      args: [hashToken(token)],
+    });
+    const row = r.rows[0];
     if (!row) return null;
-    if (row.expires_at <= this.now()) {
-      this.deleteToken(token);
+    if (Number(row.expires_at) <= this.now()) {
+      await this.deleteToken(token);
       return null;
     }
-    return { id: row.id, username: row.username };
+    return { id: Number(row.id), username: String(row.username) };
   }
 
-  deleteToken(token: string): void {
-    this.db.prepare("DELETE FROM auth_tokens WHERE token_hash = ?").run(hashToken(token));
+  async deleteToken(token: string): Promise<void> {
+    await this.run({ sql: "DELETE FROM auth_tokens WHERE token_hash = ?", args: [hashToken(token)] });
   }
 
-  listLeagues(userId: number): SavedLeagueSummary[] {
-    const active = this.activeLeagueId(userId);
-    const rows = this.db.prepare("SELECT id, data, updated_at FROM leagues WHERE user_id = ? ORDER BY updated_at DESC").all(userId) as {
-      id: number;
-      data: string;
-      updated_at: number;
-    }[];
-    return rows.map((r) => {
-      const l = JSON.parse(r.data) as CustomLeague;
-      return { id: r.id, name: l.name, sport: l.sport, season: l.season, teamCount: l.teams.length, updatedAt: new Date(r.updated_at).toISOString(), active: r.id === active };
+  async listLeagues(userId: number): Promise<SavedLeagueSummary[]> {
+    const active = await this.activeLeagueId(userId);
+    const r = await this.run({ sql: "SELECT id, data, updated_at FROM leagues WHERE user_id = ? ORDER BY updated_at DESC", args: [userId] });
+    return r.rows.map((row) => {
+      const l = JSON.parse(String(row.data)) as CustomLeague;
+      const id = Number(row.id);
+      return { id, name: l.name, sport: l.sport, season: l.season, teamCount: l.teams.length, updatedAt: new Date(Number(row.updated_at)).toISOString(), active: id === active };
     });
   }
 
-  getLeague(userId: number, leagueId: number): CustomLeague | null {
-    const row = this.db.prepare("SELECT data FROM leagues WHERE id = ? AND user_id = ?").get(leagueId, userId) as { data: string } | undefined;
-    return row ? (JSON.parse(row.data) as CustomLeague) : null;
+  async getLeague(userId: number, leagueId: number): Promise<SavedLeague | null> {
+    const r = await this.run({ sql: "SELECT data, version FROM leagues WHERE id = ? AND user_id = ?", args: [leagueId, userId] });
+    const row = r.rows[0];
+    return row ? { id: leagueId, league: JSON.parse(String(row.data)) as CustomLeague, version: Number(row.version) } : null;
   }
 
-  createLeague(userId: number, league: CustomLeague): number {
+  async createLeague(userId: number, league: CustomLeague): Promise<SavedLeague> {
     const t = this.now();
-    const r = this.db.prepare("INSERT INTO leagues (user_id, data, created_at, updated_at) VALUES (?, ?, ?, ?)").run(userId, JSON.stringify(league), t, t);
-    return Number(r.lastInsertRowid);
+    const r = await this.run({
+      sql: "INSERT INTO leagues (user_id, data, version, created_at, updated_at) VALUES (?, ?, 1, ?, ?) RETURNING id",
+      args: [userId, JSON.stringify(league), t, t],
+    });
+    return { id: Number(r.rows[0].id), league, version: 1 };
   }
 
-  updateLeague(userId: number, leagueId: number, league: CustomLeague): void {
-    this.db.prepare("UPDATE leagues SET data = ?, updated_at = ? WHERE id = ? AND user_id = ?").run(JSON.stringify(league), this.now(), leagueId, userId);
+  /**
+   * Saves only if the stored copy is still at `expectedVersion`, so a stale
+   * copy (e.g. on another server instance) can't overwrite newer edits.
+   * Returns the new version, or null if the save was rejected.
+   */
+  async updateLeague(userId: number, leagueId: number, league: CustomLeague, expectedVersion: number): Promise<number | null> {
+    const r = await this.run({
+      sql: "UPDATE leagues SET data = ?, version = version + 1, updated_at = ? WHERE id = ? AND user_id = ? AND version = ? RETURNING version",
+      args: [JSON.stringify(league), this.now(), leagueId, userId, expectedVersion],
+    });
+    return r.rows.length ? Number(r.rows[0].version) : null;
   }
 
-  deleteLeague(userId: number, leagueId: number): void {
-    this.db.prepare("DELETE FROM leagues WHERE id = ? AND user_id = ?").run(leagueId, userId);
-    this.db.prepare("UPDATE users SET active_league_id = NULL WHERE id = ? AND active_league_id = ?").run(userId, leagueId);
+  async deleteLeague(userId: number, leagueId: number): Promise<void> {
+    await this.run({ sql: "DELETE FROM leagues WHERE id = ? AND user_id = ?", args: [leagueId, userId] });
+    await this.run({ sql: "UPDATE users SET active_league_id = NULL WHERE id = ? AND active_league_id = ?", args: [userId, leagueId] });
   }
 
   /** The league the user last had open; restored automatically when their in-memory session is gone. */
-  activeLeague(userId: number): { id: number; league: CustomLeague } | null {
-    const id = this.activeLeagueId(userId);
-    if (id === null) return null;
-    const league = this.getLeague(userId, id);
-    return league ? { id, league } : null;
+  async activeLeague(userId: number): Promise<SavedLeague | null> {
+    const id = await this.activeLeagueId(userId);
+    return id === null ? null : this.getLeague(userId, id);
   }
 
-  setActiveLeague(userId: number, leagueId: number | null): void {
-    this.db.prepare("UPDATE users SET active_league_id = ? WHERE id = ?").run(leagueId, userId);
+  async setActiveLeague(userId: number, leagueId: number | null): Promise<void> {
+    await this.run({ sql: "UPDATE users SET active_league_id = ? WHERE id = ?", args: [leagueId, userId] });
   }
 
-  private activeLeagueId(userId: number): number | null {
-    const row = this.db.prepare("SELECT active_league_id FROM users WHERE id = ?").get(userId) as { active_league_id: number | null } | undefined;
-    return row?.active_league_id ?? null;
+  private async activeLeagueId(userId: number): Promise<number | null> {
+    const r = await this.run({ sql: "SELECT active_league_id FROM users WHERE id = ?", args: [userId] });
+    const v = r.rows[0]?.active_league_id;
+    return v == null ? null : Number(v);
   }
 }
 
-const globalKey = Symbol.for("fta.accountStore");
-type GlobalWithStore = typeof globalThis & { [globalKey]?: AccountStore };
-
-/** Process-wide store, opened lazily at DATABASE_PATH (default `data/app.db`). */
-export function accountStore(): AccountStore {
-  const g = globalThis as GlobalWithStore;
-  if (!g[globalKey]) {
-    const file = process.env.DATABASE_PATH || path.join(process.cwd(), "data", "app.db");
-    mkdirSync(path.dirname(file), { recursive: true });
-    const db = new Database(file);
-    db.pragma("journal_mode = WAL");
-    g[globalKey] = new AccountStore(db);
+/**
+ * Turso when TURSO_DATABASE_URL is set (required on Vercel, whose disk is
+ * read-only); otherwise a local file at DATABASE_PATH (default `data/app.db`).
+ * Loaded on first use, so guests never depend on the database.
+ */
+export async function openDatabase(): Promise<Client> {
+  const url = process.env.TURSO_DATABASE_URL;
+  if (url) {
+    const { createClient } = await import("@libsql/client/web");
+    return createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN });
   }
+  if (process.env.VERCEL) {
+    throw new AppError("CONFIG", "Accounts aren't set up on this server yet. Set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN.");
+  }
+  const file = process.env.DATABASE_PATH || path.join(process.cwd(), "data", "app.db");
+  mkdirSync(path.dirname(file), { recursive: true });
+  const { createClient } = await import("@libsql/client");
+  const db = createClient({ url: `file:${file}` });
+  await db.execute("PRAGMA foreign_keys = ON");
+  return db;
+}
+
+const globalKey = Symbol.for("fta.accountStore");
+type GlobalWithStore = typeof globalThis & { [globalKey]?: Promise<AccountStore> };
+
+/** Process-wide store. A failed open is retried on the next call. */
+export function accountStore(): Promise<AccountStore> {
+  const g = globalThis as GlobalWithStore;
+  g[globalKey] ??= openDatabase().then(
+    (db) => new AccountStore(db),
+    (e) => {
+      delete g[globalKey];
+      throw e;
+    },
+  );
   return g[globalKey];
 }

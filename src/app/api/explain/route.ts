@@ -16,7 +16,7 @@ import { allowRate, assertSameOrigin, errorResponse, noStore, readJson, requireS
 export async function POST(req: NextRequest) {
   try {
     assertSameOrigin(req);
-    const session = requireSession(req);
+    const session = await requireSession(req);
     const parsed = tradeRequestSchema.safeParse(await readJson(req));
     if (!parsed.success) throw new AppError("BAD_REQUEST", "Invalid trade request.");
     if (!session.snapshot) throw new AppError("CONFLICT", "League data has not loaded yet.");

@@ -15,16 +15,16 @@ export async function POST(req: NextRequest) {
     const { username, password } = parsed.data;
     if (!allowAuthAttempt(req, username)) throw new AppError("RATE_LIMITED", "Too many attempts. Try again in a few minutes.");
 
-    const accounts = accountStore();
-    const found = accounts.findUser(username);
+    const accounts = await accountStore();
+    const found = await accounts.findUser(username);
     // Verify against a decoy for unknown names so response time doesn't reveal which usernames exist.
     const ok = await verifyPassword(password, found?.passwordHash ?? (await decoyHash()));
     if (!found || !ok) throw new AppError("AUTH_INVALID", "Incorrect username or password.");
 
     const user = { id: found.id, username: found.username };
-    adoptGuestSession(req.cookies.get(SESSION_COOKIE)?.value, user);
+    await adoptGuestSession(req.cookies.get(SESSION_COOKIE)?.value, user, accounts);
     const res = NextResponse.json({ user: { username: user.username } }, { headers: noStore });
-    setAuthCookie(res, accounts.createToken(user.id), req);
+    setAuthCookie(res, await accounts.createToken(user.id), req);
     return res;
   } catch (e) {
     return errorResponse(e);

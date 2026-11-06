@@ -1,9 +1,10 @@
 import "server-only";
+import { unstable_rethrow } from "next/navigation";
 import { NextResponse, type NextRequest } from "next/server";
 import { AppError, isAppError } from "@/lib/domain/errors";
-import { AUTH_TTL_MS } from "@/lib/accounts/store";
+import { AUTH_TTL_MS, accountStore } from "@/lib/accounts/store";
 import { ABSOLUTE_TTL_MS, sessionStore, type SessionData, type SessionInit } from "@/lib/session/store";
-import { AUTH_COOKIE, currentUser, restoreUserSession } from "./accounts";
+import { AUTH_COOKIE, currentUser, refreshFromSaved, restoreUserSession } from "./accounts";
 
 export const SESSION_COOKIE = "fta_session";
 
@@ -85,16 +86,31 @@ export function startSession(req: NextRequest, init: SessionInit): SessionData {
 
 /**
  * The caller's session. A signed-in user whose session is gone (restart, idle
- * expiry, another device) gets their active saved league back instead of an
- * error; a session belonging to someone else is never returned.
+ * expiry, another device or server instance) gets their active saved league
+ * back instead of an error, kept in sync with the saved copy. A session
+ * belonging to someone else is never returned.
  */
-export function requireSession(req: NextRequest): SessionData {
-  const user = currentUser(req);
+export async function requireSession(req: NextRequest): Promise<SessionData> {
   const id = req.cookies.get(SESSION_COOKIE)?.value;
   const found = id ? sessionStore().get(id) : null;
-  if (found?.status === "ok" && found.session.userId === (user?.id ?? null)) return found.session;
-  const restored = user ? restoreUserSession(user.id) : null;
-  if (restored) return restored;
+  const signedIn = req.cookies.has(AUTH_COOKIE);
+  // Guest fast path: no database access.
+  if (found?.status === "ok" && found.session.userId === null && !signedIn) return found.session;
+
+  if (signedIn) {
+    const accounts = await accountStore();
+    const user = await currentUser(req, accounts);
+    if (user) {
+      const session = found?.status === "ok" && found.session.userId === user.id ? found.session : await restoreUserSession(user, accounts);
+      if (session) {
+        if (await refreshFromSaved(session, accounts)) return session;
+        sessionStore().delete(session.id);
+      }
+      throw new AppError("NO_SESSION", "Not connected to a league.");
+    }
+    if (found?.status === "ok" && found.session.userId === null) return found.session;
+  }
+
   if (!found) throw new AppError("NO_SESSION", "Not connected to a league.");
   if (found.status === "expired") {
     throw new AppError("SESSION_EXPIRED", "Your session expired and stored credentials were deleted. Reconnect to continue.");
@@ -102,7 +118,7 @@ export function requireSession(req: NextRequest): SessionData {
   if (found.status === "missing") {
     throw new AppError("NO_SESSION", "Not connected to a league. The server may have restarted; reconnect to continue.");
   }
-  // A live session owned by a different user (or a guest's, once signed in).
+  // A live session owned by a user who isn't signed in here.
   throw new AppError("NO_SESSION", "Not connected to a league.");
 }
 
@@ -122,6 +138,8 @@ export function allowRate(session: SessionData, bucket: string, max: number, win
 }
 
 export function errorResponse(e: unknown): NextResponse {
+  // Let Next.js's own control-flow errors (e.g. the build-time "uses request data" bail-out) through.
+  unstable_rethrow(e);
   if (isAppError(e)) {
     const body: Record<string, unknown> = { error: { code: e.code, message: e.message } };
     if (e.details) (body.error as Record<string, unknown>).details = e.details;

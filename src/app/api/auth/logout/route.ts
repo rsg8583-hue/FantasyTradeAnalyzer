@@ -9,12 +9,15 @@ export async function POST(req: NextRequest) {
   try {
     assertSameOrigin(req);
     const store = sessionStore();
-    const user = currentUser(req);
-    if (user) store.deleteForUser(user.id);
     const sid = req.cookies.get(SESSION_COOKIE)?.value;
     if (sid) store.delete(sid);
     const token = req.cookies.get(AUTH_COOKIE)?.value;
-    if (token) accountStore().deleteToken(token);
+    if (token) {
+      const accounts = await accountStore();
+      const user = await currentUser(req, accounts);
+      if (user) store.deleteForUser(user.id);
+      await accounts.deleteToken(token);
+    }
     const res = NextResponse.json({ user: null }, { headers: noStore });
     clearAuthCookie(res);
     clearSessionCookie(res);

@@ -9,7 +9,7 @@ import { allowRate, assertSameOrigin, errorResponse, noStore, readJson, requireS
 export async function POST(req: NextRequest) {
   try {
     assertSameOrigin(req);
-    const session = requireSession(req);
+    const session = await requireSession(req);
     if (!allowRate(session, "analyze", 30, 60_000)) {
       throw new AppError("RATE_LIMITED", "Too many analyses in a short time. Wait a moment and try again.");
     }

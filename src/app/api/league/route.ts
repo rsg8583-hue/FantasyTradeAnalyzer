@@ -6,7 +6,7 @@ import { leagueState } from "@/lib/server/state";
 /** Polling endpoint: syncs only if the cached snapshot is older than a minute. */
 export async function GET(req: NextRequest) {
   try {
-    const session = requireSession(req);
+    const session = await requireSession(req);
     await syncLeague(session, { force: false });
     return NextResponse.json(leagueState(session), { headers: noStore });
   } catch (e) {
@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     assertSameOrigin(req);
-    const session = requireSession(req);
+    const session = await requireSession(req);
     await syncLeague(session, { force: true });
     return NextResponse.json(leagueState(session), { headers: noStore });
   } catch (e) {

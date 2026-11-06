@@ -9,7 +9,7 @@ import { allowRate, errorResponse, noStore, requireSession } from "@/lib/server/
 /** Search the live ESPN player pool, ranked by projected points under the league's scoring. */
 export async function GET(req: NextRequest) {
   try {
-    const session = requireSession(req);
+    const session = await requireSession(req);
     if (session.mode !== "custom" || !session.customLeague) throw new AppError("CONFLICT", "Player search is only available in a custom league.");
     if (!allowRate(session, "search", 60, 60_000)) throw new AppError("RATE_LIMITED", "Too many searches. Try again in a moment.");
     const parsed = playerSearchSchema.safeParse({ q: req.nextUrl.searchParams.get("q") ?? "", limit: req.nextUrl.searchParams.get("limit") ?? undefined });

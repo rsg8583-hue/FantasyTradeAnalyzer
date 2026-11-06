@@ -6,7 +6,8 @@ import { presetById } from "@/lib/league/presets";
 import { getPlayerPool } from "@/lib/espn/playerPool";
 import { buildCustomSnapshot } from "@/lib/custom/provider";
 import { accountStore } from "@/lib/accounts/store";
-import { currentUser, persistLeague } from "@/lib/server/accounts";
+import { AUTH_COOKIE, currentUser, persistLeague, savedSessionInit } from "@/lib/server/accounts";
+import type { SessionData, SessionInit } from "@/lib/session/store";
 import { allowRate, assertSameOrigin, errorResponse, noStore, readJson, requireSession, setSessionCookie, startSession } from "@/lib/server/http";
 import { leagueState } from "@/lib/server/state";
 
@@ -22,21 +23,21 @@ export async function POST(req: NextRequest) {
     // Fail fast if ESPN's projection pool is unreachable, so we never show an empty league.
     await getPlayerPool(parsed.data.sport, parsed.data.season);
 
-    const user = currentUser(req);
     const league = newCustomLeague(parsed.data);
-    let savedLeagueId: number | null = null;
-    if (user) {
-      savedLeagueId = accountStore().createLeague(user.id, league);
-      accountStore().setActiveLeague(user.id, savedLeagueId);
-    }
-    const session = startSession(req, {
+    const accounts = req.cookies.has(AUTH_COOKIE) ? await accountStore() : null;
+    const user = accounts ? await currentUser(req, accounts) : null;
+    let init: SessionInit = {
       mode: "custom",
       locator: { leagueId: "custom", sport: parsed.data.sport, season: parsed.data.season },
       credentials: null,
       customLeague: league,
-      userId: user?.id ?? null,
-      savedLeagueId,
-    });
+    };
+    if (accounts && user) {
+      const saved = await accounts.createLeague(user.id, league);
+      await accounts.setActiveLeague(user.id, saved.id);
+      init = savedSessionInit(user, saved);
+    }
+    const session = startSession(req, init);
     await rebuild(session);
     const res = NextResponse.json(leagueState(session), { headers: noStore });
     setSessionCookie(res, session, req);
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     assertSameOrigin(req);
-    const session = requireSession(req);
+    const session = await requireSession(req);
     if (session.mode !== "custom" || !session.customLeague) throw new AppError("CONFLICT", "This session is not a custom league.");
     if (!allowRate(session, "customEdit", 120, 60_000)) throw new AppError("RATE_LIMITED", "Too many edits at once. Slow down a moment.");
     const parsed = customActionSchema.safeParse(await readJson(req));
@@ -58,7 +59,7 @@ export async function PATCH(req: NextRequest) {
 
     const pool = await getPlayerPool(session.customLeague.sport, session.customLeague.season);
     applyAction(session.customLeague, parsed.data, (id) => pool.byId.has(id));
-    persistLeague(session);
+    await persistLeague(session);
     await rebuild(session);
     return NextResponse.json(leagueState(session), { headers: noStore });
   } catch (e) {
@@ -66,7 +67,7 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
-async function rebuild(session: ReturnType<typeof requireSession>) {
+async function rebuild(session: SessionData) {
   if (!session.customLeague) return;
   const pool = await getPlayerPool(session.customLeague.sport, session.customLeague.season);
   session.snapshot = buildCustomSnapshot(session.customLeague, pool, new Date());

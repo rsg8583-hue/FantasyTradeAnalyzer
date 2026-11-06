@@ -124,7 +124,8 @@ describe("custom league mutations", () => {
     const l = freshLeague();
     l.presetId = "ffl-ppr";
     const cap = maxRosterSize(l);
-    expect(cap).toBeGreaterThan(0);
+    expect(cap).toBe(17);
+    expect(maxRosterSize({ ...l, presetId: "fba-points" })).toBe(17);
     applyAction(l, { action: "addTeam", name: "A" }, exists);
     const a = l.teams[0];
     // fill with distinct ids (pool + synthetic that "exist")
