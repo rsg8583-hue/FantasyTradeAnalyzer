@@ -1,5 +1,6 @@
 import type { AccountResponse, ApiErrorBody, LeagueStateResponse, PlayerSearchResponse } from "@/lib/domain/apiTypes";
-import type { CustomAction, TradeRequest } from "@/lib/domain/apiSchemas";
+import type { CustomAction, RecommendRequest, TradeRequest } from "@/lib/domain/apiSchemas";
+import type { RecommendResult } from "@/lib/engine/recommend";
 import type { TradeAnalysis } from "@/lib/engine/types";
 import type { ExplanationResult } from "@/lib/ai/schema";
 
@@ -42,6 +43,8 @@ export const api = {
   refresh: () => call<LeagueStateResponse>("/api/league", { method: "POST" }),
   analyze: (req: TradeRequest) => call<TradeAnalysis>("/api/analyze", { method: "POST", body: JSON.stringify(req) }),
   explain: (req: TradeRequest) => call<ExplanationResult>("/api/explain", { method: "POST", body: JSON.stringify(req) }),
+  recommend: (req: RecommendRequest) =>
+    call<RecommendResult & { snapshotFetchedAt: string }>("/api/recommend", { method: "POST", body: JSON.stringify(req) }),
   me: () => call<AccountResponse>("/api/auth/me"),
   signup: (body: { username: string; password: string }) => call<{ user: { username: string } }>("/api/auth/signup", { method: "POST", body: JSON.stringify(body) }),
   login: (body: { username: string; password: string }) => call<{ user: { username: string } }>("/api/auth/login", { method: "POST", body: JSON.stringify(body) }),

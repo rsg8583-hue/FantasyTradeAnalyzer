@@ -62,7 +62,12 @@ No ESPN credentials are ever needed or stored. The player pool is public.
    - Click **Analyze trade**.
 4. Results show each team's projected-points change, a before/after optimal lineup, a verdict, and an AI explanation.
    In a league you built, **Make this trade** then moves the players between the two rosters (and removes any drops). It's only offered for a trade analyzed against the current rosters; if anything changed, re-analyze first.
-5. **Refresh league** re-fetches ESPN's projections. **Close league** ends the session.
+5. **Trade finder** suggests trades: choose your team, check the players you'd offer, pick how many players to get back (1–3) and optionally a trade partner, then **Find trades**. Every package of players on the other rosters is scored with the same lineup math as trade analysis (an over-the-limit roster drops its lowest-projected player). Only trades that raise your projected lineup are shown, in two rankings:
+   - **Fairest**: the team that gains less comes out as well as possible, so trades both teams gain from come first. These are the most realistic.
+   - **Best for me**: the biggest gain for you, whatever it does to the other team.
+
+   Packages that add a player who changes nothing (say, a backup who'd never start) are left out. **Open in trade builder** loads a suggestion and analyzes it.
+6. **Refresh league** re-fetches ESPN's projections. **Close league** ends the session.
 
 ### Accounts
 
@@ -87,12 +92,12 @@ src/lib/session/      Expiring server-side session store (opaque id → league +
 src/lib/accounts/     Password hashing and the SQLite/Turso store for users, login tokens, and saved leagues.
 src/lib/server/       Route helpers (origin checks, cookies, rate limits) and league sync.
 src/lib/projections/  Projection providers: full-season (custom) and weekly/daily (demo), plus scoring.
-src/lib/engine/       Lineup optimizer (Hungarian) and trade validation/calculation.
+src/lib/engine/       Lineup optimizer (Hungarian), trade validation/calculation, and the trade finder.
 src/lib/ai/           AI provider interface, OpenAI provider, minimal input builder, output
                       validation, deterministic fallback.
 src/components/       UI
 src/app/api/          custom (create/edit) · players (search) · demo · session · league · analyze · explain
-                      · auth (signup/login/logout/me) · leagues (open/delete saved)
+                      · recommend (trade finder) · auth (signup/login/logout/me) · leagues (open/delete saved)
 ```
 
 The old ESPN **league-linking** adapter (`src/lib/espn/provider.ts`, `leagueInput.ts`) and its tests are retained but no longer exposed in the UI. The app now reads only ESPN's public player pool.
@@ -104,7 +109,7 @@ The old ESPN **league-linking** adapter (`src/lib/espn/provider.ts`, `leagueInpu
 - **Accounts.** Guests never touch the database; it's opened only for requests with a sign-in cookie. Passwords are hashed with scrypt (random salt per user). Signing in sets a separate 30-day `HttpOnly`, `SameSite=Strict` cookie holding a random token; the database stores only its SHA-256 hash. Every saved-league query is scoped to the signed-in user. Sign-in and sign-up attempts are limited to 10 per username and 30 per address per 15 minutes, and unknown usernames take as long to reject as wrong passwords.
 - **Requests.** State-changing routes require a same-origin `Origin` header. Inputs are schema-validated.
 - **Outbound ESPN calls.** URLs are built only from an allowlisted host (`lm-api-reads.fantasy.espn.com`), fixed path patterns, and allowlisted views/filters. Redirects are not followed.
-- **Rate limits per session.** Player pool: cached 6 hours, shared across callers. Search: 60/min. Edits: 120/min. Analyze: 30/min. AI explanations: 10 per 10 minutes, cached per trade.
+- **Rate limits per session.** Player pool: cached 6 hours, shared across callers. Search: 60/min. Edits: 120/min. Analyze: 30/min. Trade finder: 20/min. AI explanations: 10 per 10 minutes, cached per trade.
 - **Deployment caveat.** The in-memory session store and player-pool cache are for a single server instance. Running several instances needs a shared store (the session code has an interface for one). A restart clears both, but signed-in users' leagues are restored from the database. Each saved league has a version number that goes up on every save, so a server instance with an out-of-date copy reloads it instead of overwriting newer edits; this keeps signed-in leagues consistent across Vercel's multiple instances. Guest leagues remain per-instance.
 
 ## ESPN data: unofficial, with limitations

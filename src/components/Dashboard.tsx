@@ -7,6 +7,7 @@ import { api, ApiError, SESSION_GONE } from "@/lib/client/api";
 import { emptyDraft, reconcileDraft, toRequest, type TradeDraft } from "@/lib/client/draft";
 import { usePolling } from "@/lib/client/usePolling";
 import type { LeagueStateResponse } from "@/lib/domain/apiTypes";
+import type { TradeSuggestion } from "@/lib/engine/recommend";
 import type { TradeAnalysis } from "@/lib/engine/types";
 import { projectionProviderFor } from "@/lib/projections/select";
 import { AccountChip, AuthForm } from "./AccountPanel";
@@ -14,6 +15,7 @@ import { LeagueBuilder } from "./LeagueBuilder";
 import { LeagueHeader } from "./LeagueHeader";
 import { RosterView } from "./RosterView";
 import { TradeBuilder } from "./TradeBuilder";
+import { TradeFinder } from "./TradeFinder";
 import { TradeResults } from "./TradeResults";
 import { Alert, Button, Card, Spinner, TopBar, cx } from "./ui";
 
@@ -21,8 +23,8 @@ const POLL_KEY = "fta.pollMs";
 const DEFAULT_POLL_MS = 5 * 60_000;
 
 type ExplainState = { status: "idle" | "loading" } | { status: "done"; result: ExplanationResult } | { status: "error"; message: string };
-type Tab = "build" | "trade" | "rosters";
-const TAB_LABEL: Record<Tab, string> = { build: "Build league", trade: "Trade builder", rosters: "Teams & rosters" };
+type Tab = "build" | "trade" | "finder" | "rosters";
+const TAB_LABEL: Record<Tab, string> = { build: "Build league", trade: "Trade builder", finder: "Trade finder", rosters: "Teams & rosters" };
 
 function readPollPref(): number {
   try {
@@ -146,9 +148,9 @@ function DashboardView() {
     setExplanation({ status: "idle" });
   }
 
-  async function analyze() {
+  async function analyze(d: TradeDraft = draft) {
     if (!snapshot) return;
-    const req = toRequest(draft, snapshot);
+    const req = toRequest(d, snapshot);
     if (!req) return;
     setAnalyzing(true);
     setAnalyzeError(null);
@@ -176,6 +178,18 @@ function DashboardView() {
     } finally {
       setAnalyzing(false);
     }
+  }
+
+  /** Loads a trade finder suggestion into the trade builder and analyzes it. */
+  function openSuggestion(teamId: number, offer: number[], s: TradeSuggestion) {
+    const next: TradeDraft = {
+      a: { teamId, sends: offer, drops: s.myDrops, adds: [] },
+      b: { teamId: s.partnerTeamId, sends: s.receive, drops: s.partnerDrops, adds: [] },
+    };
+    updateDraft(next);
+    setTab("trade");
+    void analyze(next);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   /** Carries out the analyzed trade on the custom league's rosters. */
@@ -242,7 +256,7 @@ function DashboardView() {
     }
   }
 
-  const tabs: Tab[] = state?.mode === "custom" ? ["build", "trade", "rosters"] : ["trade", "rosters"];
+  const tabs: Tab[] = state?.mode === "custom" ? ["build", "trade", "finder", "rosters"] : ["trade", "finder", "rosters"];
   const activeTab: Tab = tabs.includes(tab) ? tab : tabs[0];
 
   function onTabKey(e: KeyboardEvent<HTMLButtonElement>) {
@@ -396,6 +410,9 @@ function DashboardView() {
                 </p>
               )
             )}
+          </div>
+          <div id="panel-finder" role="tabpanel" aria-labelledby="tab-finder" hidden={activeTab !== "finder"}>
+            {projections && <TradeFinder snapshot={snapshot} projections={projections} onOpen={openSuggestion} onSessionError={handleError} />}
           </div>
           <div id="panel-rosters" role="tabpanel" aria-labelledby="tab-rosters" hidden={activeTab !== "rosters"}>
             {projections && <RosterView snapshot={snapshot} projections={projections} />}

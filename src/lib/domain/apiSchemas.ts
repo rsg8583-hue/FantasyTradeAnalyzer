@@ -80,6 +80,14 @@ export const tradeRequestSchema = z.object({
 export type TradeRequest = z.infer<typeof tradeRequestSchema>;
 export type TradeSideRequest = z.infer<typeof tradeSideSchema>;
 
+export const recommendRequestSchema = z.object({
+  teamId: z.number().int(),
+  offer: z.array(playerId).min(1, "Select at least one player to offer.").max(5, "Offer at most 5 players at a time."),
+  partnerTeamId: z.number().int().nullable().default(null),
+  maxReceive: z.number().int().min(1).max(3).default(2),
+});
+export type RecommendRequest = z.infer<typeof recommendRequestSchema>;
+
 /** One edit to the custom league. The server applies it and rebuilds the snapshot. */
 export const customActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("addTeam"), name: leagueNameSchema }),
