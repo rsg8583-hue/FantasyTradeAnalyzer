@@ -1,0 +1,213 @@
+{
+ "settings": {
+  "proTeams": [
+   {
+    "abbrev": "KC",
+    "byeWeek": 5,
+    "id": 12,
+    "location": "Kansas City",
+    "name": "Chiefs",
+    "proGamesByScoringPeriod": {
+     "1": [
+      {
+       "awayProTeamId": 7,
+       "date": 1789431300000,
+       "homeProTeamId": 12,
+       "id": 401872931,
+       "scoringPeriodId": 1,
+       "startTimeTBD": false,
+       "statsOfficial": true,
+       "validForLocking": true
+      }
+     ],
+     "2": [
+      {
+       "awayProTeamId": 11,
+       "date": 1789950000000,
+       "homeProTeamId": 12,
+       "id": 401872945,
+       "scoringPeriodId": 2,
+       "startTimeTBD": false,
+       "statsOfficial": true,
+       "validForLocking": true
+      }
+     ],
+     "3": [
+      {
+       "awayProTeamId": 12,
+       "date": 1790528400000,
+       "homeProTeamId": 15,
+       "id": 401872952,
+       "scoringPeriodId": 3,
+       "startTimeTBD": false,
+       "statsOfficial": true,
+       "validForLocking": true
+      }
+     ],
+     "4": [
+      {
+       "awayProTeamId": 12,
+       "date": 1791145500000,
+       "homeProTeamId": 13,
+       "id": 401872976,
+       "scoringPeriodId": 4,
+       "startTimeTBD": false,
+       "statsOfficial": true,
+       "validForLocking": true
+      }
+     ],
+     "6": [
+      {
+       "awayProTeamId": 24,
+       "date": 1792355100000,
+       "homeProTeamId": 12,
+       "id": 401873006,
+       "scoringPeriodId": 6,
+       "startTimeTBD": false,
+       "statsOfficial": true,
+       "validForLocking": true
+      }
+     ],
+     "7": [
+      {
+       "awayProTeamId": 12,
+       "date": 1792974000000,
+       "homeProTeamId": 26,
+       "id": 401873022,
+       "scoringPeriodId": 7,
+       "startTimeTBD": false,
+       "statsOfficial": true,
+       "validForLocking": true
+      }
+     ],
+     "8": [
+      {
+       "awayProTeamId": 12,
+       "date": 1793568300000,
+       "homeProTeamId": 7,
+       "id": 401873033,
+       "scoringPeriodId": 8,
+       "startTimeTBD": false,
+       "statsOfficial": false,
+       "validForLocking": true
+      }
+     ]
+    },
+    "teamPlayersByPosition": {
+     "16": -16012,
+     "14": -14012,
+     "15": -15012
+    },
+    "universeId": 1
+   },
+   {
+    "abbrev": "FA",
+    "byeWeek": 0,
+    "id": 0,
+    "location": "",
+    "name": "FA",
+    "proGamesByScoringPeriod": {},
+    "universeId": 0
+   },
+   {
+    "abbrev": "BUF",
+    "byeWeek": 7,
+    "id": 2,
+    "location": "Buffalo",
+    "name": "Bills",
+    "proGamesByScoringPeriod": {
+     "1": [
+      {
+       "awayProTeamId": 2,
+       "date": 1789318800000,
+       "homeProTeamId": 34,
+       "id": 401872660,
+       "scoringPeriodId": 1,
+       "startTimeTBD": false,
+       "statsOfficial": true,
+       "validForLocking": true
+      }
+     ],
+     "2": [
+      {
+       "awayProTeamId": 8,
+       "date": 1789690500000,
+       "homeProTeamId": 2,
+       "id": 401872932,
+       "scoringPeriodId": 2,
+       "startTimeTBD": false,
+       "statsOfficial": true,
+       "validForLocking": true
+      }
+     ],
+     "3": [
+      {
+       "awayProTeamId": 24,
+       "date": 1790528400000,
+       "homeProTeamId": 2,
+       "id": 401872953,
+       "scoringPeriodId": 3,
+       "startTimeTBD": false,
+       "statsOfficial": true,
+       "validForLocking": true
+      }
+     ],
+     "4": [
+      {
+       "awayProTeamId": 17,
+       "date": 1791133200000,
+       "homeProTeamId": 2,
+       "id": 401872971,
+       "scoringPeriodId": 4,
+       "startTimeTBD": false,
+       "statsOfficial": true,
+       "validForLocking": true
+      }
+     ],
+     "5": [
+      {
+       "awayProTeamId": 2,
+       "date": 1791850500000,
+       "homeProTeamId": 14,
+       "id": 401872994,
+       "scoringPeriodId": 5,
+       "startTimeTBD": false,
+       "statsOfficial": true,
+       "validForLocking": true
+      }
+     ],
+     "6": [
+      {
+       "awayProTeamId": 2,
+       "date": 1792355100000,
+       "homeProTeamId": 13,
+       "id": 401873005,
+       "scoringPeriodId": 6,
+       "startTimeTBD": false,
+       "statsOfficial": true,
+       "validForLocking": true
+      }
+     ],
+     "8": [
+      {
+       "awayProTeamId": 33,
+       "date": 1793556000000,
+       "homeProTeamId": 2,
+       "id": 401873026,
+       "scoringPeriodId": 8,
+       "startTimeTBD": false,
+       "statsOfficial": false,
+       "validForLocking": true
+      }
+     ]
+    },
+    "teamPlayersByPosition": {
+     "16": -16002,
+     "14": -14002,
+     "15": -15002
+    },
+    "universeId": 1
+   }
+  ]
+ }
+}

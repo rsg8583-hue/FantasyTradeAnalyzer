@@ -1,0 +1,99 @@
+@import "tailwindcss";
+
+/* Palette: deep navy + bright blue + yellow highlight. */
+:root {
+  --bg: #eef2f8;
+  --surface: #ffffff;
+  --muted: #f1f4f9;
+  --line: #d6deea;
+  --fg: #0d1b2e;
+  --fg-soft: #4a5a72;
+  --navy: #0a1f44;
+  --navy-2: #12336b;
+  --navy-fg: #ffffff;
+  --navy-soft: #b9c7e0;
+  --accent: #1660d6;
+  --accent-strong: #0f4cb0;
+  --accent-fg: #ffffff;
+  --gold: #ffcc00;
+  --gold-strong: #f2b800;
+  --gold-fg: #1a1400;
+  --good: #11743a;
+  --bad: #b42318;
+  --warn: #8a5a00;
+  --demo: #7a3fd1;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #07111f;
+    --surface: #0f1c31;
+    --muted: #15253f;
+    --line: #233657;
+    --fg: #e9eef7;
+    --fg-soft: #a3b2cb;
+    --navy: #050d1c;
+    --navy-2: #0c2148;
+    --navy-fg: #ffffff;
+    --navy-soft: #9fb0cf;
+    --accent: #5b9bff;
+    --accent-strong: #84b4ff;
+    --accent-fg: #06101f;
+    --gold: #ffd633;
+    --gold-strong: #ffcc00;
+    --gold-fg: #1a1400;
+    --good: #4fd38a;
+    --bad: #ff7a6e;
+    --warn: #f0b84a;
+    --demo: #b58cf5;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-fg-soft: var(--fg-soft);
+  --color-navy: var(--navy);
+  --color-navy-2: var(--navy-2);
+  --color-navy-fg: var(--navy-fg);
+  --color-navy-soft: var(--navy-soft);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-fg: var(--accent-fg);
+  --color-gold: var(--gold);
+  --color-gold-strong: var(--gold-strong);
+  --color-gold-fg: var(--gold-fg);
+  --color-good: var(--good);
+  --color-bad: var(--bad);
+  --color-warn: var(--warn);
+  --color-demo: var(--demo);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+input,
+select,
+textarea {
+  color: var(--fg);
+  background: var(--surface);
+}
+
+input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+/* Navy hero band used at the top of both screens. */
+.hero-band {
+  background:
+    radial-gradient(1200px 300px at 85% -40%, color-mix(in srgb, var(--accent) 45%, transparent), transparent 70%),
+    linear-gradient(135deg, var(--navy) 0%, var(--navy-2) 100%);
+  color: var(--navy-fg);
+}
