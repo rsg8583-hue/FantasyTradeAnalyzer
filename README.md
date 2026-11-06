@@ -2,7 +2,7 @@
 
 Build your own fantasy **football or basketball points league** — create teams, fill them from ESPN's real player pool, and estimate how a proposed trade changes each team's projected starting-lineup points. No ESPN account, league link, or cookies needed.
 
-The app is analysis only. It never proposes, accepts, or submits trades.
+The app never proposes, accepts, or submits trades on ESPN. **Make this trade** only changes the rosters of a league you built in the app.
 
 - **Live ESPN projections.** Players and their full-season projections come from ESPN's public player endpoint. You pick a scoring preset (PPR, Half-PPR, Standard, or a basketball points preset); the engine scores ESPN's projected stats with it.
 - **Deterministic numbers.** Optimal lineups are recomputed before and after the trade, using your league's scoring and lineup rules.
@@ -61,6 +61,7 @@ No ESPN credentials are ever needed or stored. The player pool is public.
    - If a team ends up over its roster limit, choose its drops.
    - Click **Analyze trade**.
 4. Results show each team's projected-points change, a before/after optimal lineup, a verdict, and an AI explanation.
+   In a league you built, **Make this trade** then moves the players between the two rosters (and removes any drops). It's only offered for a trade analyzed against the current rosters; if anything changed, re-analyze first.
 5. **Refresh league** re-fetches ESPN's projections. **Close league** ends the session.
 
 ### Accounts

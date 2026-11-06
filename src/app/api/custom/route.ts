@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createCustomRequestSchema, customActionSchema } from "@/lib/domain/apiSchemas";
 import { AppError } from "@/lib/domain/errors";
 import { applyAction, newCustomLeague } from "@/lib/custom/mutate";
+import { planTrade } from "@/lib/engine/trade";
 import { presetById } from "@/lib/league/presets";
 import { getPlayerPool } from "@/lib/espn/playerPool";
 import { buildCustomSnapshot } from "@/lib/custom/provider";
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/** Apply one edit (add/remove team or player) and rebuild the snapshot. */
+/** Apply one edit (add/remove team or player, or make a trade) and rebuild the snapshot. */
 export async function PATCH(req: NextRequest) {
   try {
     assertSameOrigin(req);
@@ -56,6 +57,16 @@ export async function PATCH(req: NextRequest) {
     if (!allowRate(session, "customEdit", 120, 60_000)) throw new AppError("RATE_LIMITED", "Too many edits at once. Slow down a moment.");
     const parsed = customActionSchema.safeParse(await readJson(req));
     if (!parsed.success) throw new AppError("BAD_REQUEST", "Invalid edit.");
+
+    if (parsed.data.action === "trade") {
+      // Only a trade analyzed against the current rosters can be made, and it must pass the same checks.
+      const trade = parsed.data.trade;
+      if (!session.snapshot || session.snapshot.fetchedAt !== trade.snapshotFetchedAt) {
+        throw new AppError("CONFLICT", "The league changed since this trade was analyzed. Re-analyze it, then make the trade.");
+      }
+      const plan = planTrade(session.snapshot, trade);
+      if (plan.errors.length > 0) throw new AppError("BAD_REQUEST", plan.errors.join(" "));
+    }
 
     const pool = await getPlayerPool(session.customLeague.sport, session.customLeague.season);
     applyAction(session.customLeague, parsed.data, (id) => pool.byId.has(id));

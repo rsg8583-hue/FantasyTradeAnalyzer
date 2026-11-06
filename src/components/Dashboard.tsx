@@ -59,6 +59,9 @@ function DashboardView() {
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [explanation, setExplanation] = useState<ExplainState>({ status: "idle" });
   const [showSignIn, setShowSignIn] = useState(false);
+  const [making, setMaking] = useState(false);
+  const [makeError, setMakeError] = useState<string | null>(null);
+  const [tradeDone, setTradeDone] = useState<string | null>(null);
   const draftRef = useRef(draft);
   const lastFetchedAt = useRef<string | null>(null);
   const explainSeq = useRef(0);
@@ -136,6 +139,8 @@ function DashboardView() {
     if (!snapshot) return;
     setDraft(reconcileDraft(next, snapshot).draft);
     setDraftNotes([]);
+    setMakeError(null);
+    setTradeDone(null);
     setAnalysis(null);
     setAnalyzeError(null);
     setExplanation({ status: "idle" });
@@ -147,6 +152,8 @@ function DashboardView() {
     if (!req) return;
     setAnalyzing(true);
     setAnalyzeError(null);
+    setMakeError(null);
+    setTradeDone(null);
     setExplanation({ status: "idle" });
     try {
       const result = await api.analyze(req);
@@ -168,6 +175,35 @@ function DashboardView() {
       if (e instanceof ApiError && e.code === "CONFLICT") void sync(false);
     } finally {
       setAnalyzing(false);
+    }
+  }
+
+  /** Carries out the analyzed trade on the custom league's rosters. */
+  async function makeTrade() {
+    if (!snapshot || !analysis) return;
+    const req = toRequest(draft, snapshot);
+    if (!req) return;
+    const name = (id: number) => analysis.players[String(id)]?.name ?? `Player ${id}`;
+    const lines = analysis.teams.map((t) =>
+      [`${t.teamName} gets: ${t.received.map(name).join(", ") || "nothing"}`, ...(t.drops.length ? [`${t.teamName} drops: ${t.drops.map(name).join(", ")}`] : [])].join("\n"),
+    );
+    if (!window.confirm(`Make this trade?\n\n${lines.join("\n")}`)) return;
+    setMaking(true);
+    setMakeError(null);
+    try {
+      const next = await api.editCustom({ action: "trade", trade: req });
+      // Start a fresh draft rather than "reconciling" the old one against the new rosters.
+      draftRef.current = emptyDraft();
+      setDraft(draftRef.current);
+      setAnalysis(null);
+      setExplanation({ status: "idle" });
+      applyState(next);
+      setDraftNotes([]);
+      setTradeDone(`Trade made. ${analysis.teams.map((t) => `${t.teamName} received ${t.received.map(name).join(", ") || "nothing"}`).join("; ")}.`);
+    } catch (e) {
+      if (!handleError(e)) setMakeError(e instanceof ApiError ? e.message : "The trade could not be made.");
+    } finally {
+      setMaking(false);
     }
   }
 
@@ -341,6 +377,7 @@ function DashboardView() {
             {projections && (
               <TradeBuilder snapshot={snapshot} projections={projections} draft={draft} onChange={updateDraft} onAnalyze={() => void analyze()} analyzing={analyzing} />
             )}
+            {tradeDone && <Alert tone="good" role="status" title="Rosters updated">{tradeDone}</Alert>}
             {analyzeError && <Alert tone="bad" role="alert" title="Could not analyze this trade">{analyzeError}</Alert>}
             {analysis ? (
               <TradeResults
@@ -348,6 +385,9 @@ function DashboardView() {
                 outdated={analysis.snapshotFetchedAt !== snapshot.fetchedAt}
                 onReanalyze={() => void analyze()}
                 explanation={explanation}
+                onMakeTrade={state.mode === "custom" ? () => void makeTrade() : undefined}
+                making={making}
+                makeError={makeError}
               />
             ) : (
               !analyzing && (

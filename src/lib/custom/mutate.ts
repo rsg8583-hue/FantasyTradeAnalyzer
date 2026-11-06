@@ -1,4 +1,4 @@
-import type { CustomAction } from "@/lib/domain/apiSchemas";
+import type { CustomAction, TradeRequest } from "@/lib/domain/apiSchemas";
 import { AppError } from "@/lib/domain/errors";
 import { presetById } from "@/lib/league/presets";
 import type { CustomLeague } from "./types";
@@ -63,7 +63,39 @@ export function applyAction(league: CustomLeague, action: CustomAction, playerEx
       t.playerIds = t.playerIds.filter((id) => id !== action.playerId);
       return;
     }
+    case "trade":
+      applyTrade(league, action.trade);
+      return;
   }
+}
+
+/**
+ * Moves traded players between the two rosters and removes each team's drops.
+ * The caller validates the trade with planTrade first; this re-checks what it
+ * relies on so a bad request can never duplicate or lose a player.
+ */
+function applyTrade(league: CustomLeague, trade: TradeRequest): void {
+  const a = league.teams.find((t) => t.id === trade.teamA.teamId);
+  const b = league.teams.find((t) => t.id === trade.teamB.teamId);
+  if (!a || !b || a === b) throw new AppError("BAD_REQUEST", "Select two different teams from this league.");
+  if (trade.teamA.adds.length > 0 || trade.teamB.adds.length > 0) {
+    throw new AppError("BAD_REQUEST", "Add replacement players in the league builder instead.");
+  }
+  const after = (own: typeof a, side: TradeRequest["teamA"], other: TradeRequest["teamA"]) => {
+    if (side.sends.some((id) => !own.playerIds.includes(id))) {
+      throw new AppError("CONFLICT", `${own.name}'s roster changed. Re-analyze the trade before making it.`);
+    }
+    const leaving = new Set([...side.sends, ...side.drops]);
+    const roster = [...own.playerIds.filter((id) => !leaving.has(id)), ...other.sends.filter((id) => !side.drops.includes(id))];
+    if (roster.length > maxRosterSize(league)) {
+      throw new AppError("BAD_REQUEST", `${own.name} would have more than ${maxRosterSize(league)} players.`);
+    }
+    return roster;
+  };
+  const rosterA = after(a, trade.teamA, trade.teamB);
+  const rosterB = after(b, trade.teamB, trade.teamA);
+  a.playerIds = rosterA;
+  b.playerIds = rosterB;
 }
 
 export function newCustomLeague(input: { name: string; sport: CustomLeague["sport"]; season: number; presetId: string }): CustomLeague {

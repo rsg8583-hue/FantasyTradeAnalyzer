@@ -139,10 +139,11 @@ describe("custom snapshot + full-season projections", () => {
   async function setup(presetId = "ffl-ppr") {
     const pool = await fetchPlayerPool("football", 2026, poolClient(ffl));
     const ids = [...pool.byId.keys()];
+    expect(ids).toHaveLength(4);
     const league = newCustomLeague({ name: "Custom Cup", sport: "football", season: 2026, presetId });
     league.teams = [
-      { id: 1, name: "Reds", playerIds: [ids[0], ids[1], ids[2]] },
-      { id: 2, name: "Blues", playerIds: [ids[3], ids[4], ids[5]] },
+      { id: 1, name: "Reds", playerIds: [ids[0], ids[1]] },
+      { id: 2, name: "Blues", playerIds: [ids[2], ids[3]] },
     ];
     league.nextTeamId = 3;
     return { pool, league, ids };
@@ -156,7 +157,9 @@ describe("custom snapshot + full-season projections", () => {
     expect(snap.settings.scoringItems.length).toBeGreaterThan(0);
     expect(snap.settings.scoringLabel).toMatch(/PPR/);
     expect(snap.teams.map((t) => t.name)).toEqual(["Reds", "Blues"]);
-    expect(snap.teams[0].roster.length).toBe(3);
+    expect(snap.teams[0].roster.length).toBe(2);
+    // No one is placed on IR in a custom league, so every roster spot is active.
+    expect(snap.settings.activeRosterLimit).toBe(maxRosterSize(league));
     expect(snap.freeAgents.status).toBe("unavailable");
   });
 
@@ -188,12 +191,61 @@ describe("custom snapshot + full-season projections", () => {
     const req = {
       snapshotFetchedAt: snap.fetchedAt,
       teamA: { teamId: 1, sends: [ids[0]], drops: [], adds: [] },
-      teamB: { teamId: 2, sends: [ids[3]], drops: [], adds: [] },
+      teamB: { teamId: 2, sends: [ids[2]], drops: [], adds: [] },
     };
     const analysis = analyzeTrade(snap, req, new FullSeasonProjectionProvider());
     expect(analysis.horizon.label).toMatch(/full-season/i);
     expect(["both_improve", "one_improves", "neither_improves", "insufficient_data"]).toContain(analysis.verdict);
     expect(analysis.teams).toHaveLength(2);
+  });
+
+  it("makes a trade by moving players between the two rosters", async () => {
+    const { league, ids } = await setup();
+    const trade = {
+      snapshotFetchedAt: "t",
+      teamA: { teamId: 1, sends: [ids[0], ids[1]], drops: [], adds: [] },
+      teamB: { teamId: 2, sends: [ids[2]], drops: [], adds: [] },
+    };
+    applyAction(league, { action: "trade", trade }, () => true);
+    expect(league.teams[0].playerIds).toEqual([ids[2]]);
+    expect(league.teams[1].playerIds).toEqual([ids[3], ids[0], ids[1]]);
+  });
+
+  it("removes dropped players when a trade is made", async () => {
+    const { league, ids } = await setup();
+    // A full team takes two players for one, so it must drop one.
+    league.teams[1].playerIds = Array.from({ length: maxRosterSize(league) }, (_, i) => 50_000 + i);
+    const trade = {
+      snapshotFetchedAt: "t",
+      teamA: { teamId: 1, sends: [ids[0], ids[1]], drops: [], adds: [] },
+      teamB: { teamId: 2, sends: [50_000], drops: [50_001], adds: [] },
+    };
+    applyAction(league, { action: "trade", trade }, () => true);
+    expect(league.teams[0].playerIds).toEqual([50_000]);
+    expect(league.teams[1].playerIds).not.toContain(50_001);
+    expect(league.teams[1].playerIds).toContain(ids[0]);
+    expect(league.teams[1].playerIds).toHaveLength(maxRosterSize(league));
+  });
+
+  it("refuses a trade that no longer matches the rosters, or overfills one, leaving both untouched", async () => {
+    const { league, ids } = await setup();
+    const before = JSON.stringify(league.teams);
+    const stale = {
+      snapshotFetchedAt: "t",
+      teamA: { teamId: 1, sends: [ids[2]], drops: [], adds: [] },
+      teamB: { teamId: 2, sends: [ids[3]], drops: [], adds: [] },
+    };
+    expect(() => applyAction(league, { action: "trade", trade: stale }, () => true)).toThrow(/roster changed/);
+    league.teams[1].playerIds = Array.from({ length: maxRosterSize(league) }, (_, i) => 50_000 + i);
+    const full = JSON.stringify(league.teams);
+    const overfill = {
+      snapshotFetchedAt: "t",
+      teamA: { teamId: 1, sends: [ids[0], ids[1]], drops: [], adds: [] },
+      teamB: { teamId: 2, sends: [50_000], drops: [], adds: [] },
+    };
+    expect(() => applyAction(league, { action: "trade", trade: overfill }, () => true)).toThrow(/more than 17/);
+    expect(JSON.stringify(league.teams)).toBe(full);
+    expect(before).not.toBe(full);
   });
 });
 

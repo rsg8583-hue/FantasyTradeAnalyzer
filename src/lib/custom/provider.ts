@@ -33,7 +33,8 @@ export function buildCustomSnapshot(league: CustomLeague, pool: PlayerPool, now:
   }
   const players: Record<string, Player> = {};
   const warnings: string[] = [];
-  const activeRosterLimit = preset.slots.filter((s) => s.kind !== "ir").reduce((a, s) => a + s.count, 0);
+  // Custom rosters never place anyone on IR, so every roster spot (IR included) counts as active.
+  const activeRosterLimit = preset.slots.reduce((a, s) => a + s.count, 0);
 
   const teams: FantasyTeam[] = league.teams.map((t) => {
     const roster = t.playerIds.flatMap((id) => {

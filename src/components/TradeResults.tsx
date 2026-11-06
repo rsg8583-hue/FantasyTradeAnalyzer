@@ -15,9 +15,13 @@ interface Props {
   outdated: boolean;
   onReanalyze: () => void;
   explanation: { status: "idle" | "loading" } | { status: "done"; result: ExplanationResult } | { status: "error"; message: string };
+  /** Present only where trades can be carried out (custom leagues). */
+  onMakeTrade?: () => void;
+  making?: boolean;
+  makeError?: string | null;
 }
 
-export function TradeResults({ analysis, outdated, onReanalyze, explanation }: Props) {
+export function TradeResults({ analysis, outdated, onReanalyze, explanation, onMakeTrade, making = false, makeError = null }: Props) {
   const name = (id: number) => analysis.players[String(id)]?.name ?? `Player ${id}`;
   return (
     <section aria-labelledby="results-heading" className="space-y-4">
@@ -56,6 +60,22 @@ export function TradeResults({ analysis, outdated, onReanalyze, explanation }: P
       <div className="grid gap-4 md:grid-cols-2">
         {analysis.teams.map((t) => <ResultCard key={t.side} t={t} name={name} />)}
       </div>
+
+      {onMakeTrade && !outdated && (
+        <Card aria-labelledby="make-trade-heading" className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h3 id="make-trade-heading" className="font-semibold">Make this trade</h3>
+            <p className="text-sm text-fg-soft">
+              Moves the players between {analysis.teams[0].teamName} and {analysis.teams[1].teamName}
+              {analysis.teams.some((t) => t.drops.length > 0) ? " and removes the dropped players" : ""}. Rosters update right away.
+            </p>
+          </div>
+          <Button variant="primary" className="px-5" disabled={making} onClick={onMakeTrade}>
+            {making ? "Making trade…" : "Make this trade"}
+          </Button>
+          {makeError && <div className="w-full"><Alert tone="bad" role="alert" title="Trade not made">{makeError}</Alert></div>}
+        </Card>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-2">
         {analysis.teams.map((t) => <LineupComparison key={t.side} t={t} analysis={analysis} />)}

@@ -62,6 +62,24 @@ export const createCustomRequestSchema = z.object({
 });
 export type CreateCustomRequest = z.infer<typeof createCustomRequestSchema>;
 
+const playerIdList = z.array(playerId).max(30);
+
+export const tradeSideSchema = z.object({
+  teamId: z.number().int(),
+  sends: playerIdList,
+  drops: playerIdList.default([]),
+  adds: playerIdList.default([]),
+});
+
+export const tradeRequestSchema = z.object({
+  /** fetchedAt of the snapshot the user built the trade against. */
+  snapshotFetchedAt: z.string().max(64),
+  teamA: tradeSideSchema,
+  teamB: tradeSideSchema,
+});
+export type TradeRequest = z.infer<typeof tradeRequestSchema>;
+export type TradeSideRequest = z.infer<typeof tradeSideSchema>;
+
 /** One edit to the custom league. The server applies it and rebuilds the snapshot. */
 export const customActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("addTeam"), name: leagueNameSchema }),
@@ -69,6 +87,8 @@ export const customActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("removeTeam"), teamId: z.number().int() }),
   z.object({ action: z.literal("addPlayer"), teamId: z.number().int(), playerId }),
   z.object({ action: z.literal("removePlayer"), teamId: z.number().int(), playerId }),
+  /** Carry out an analyzed trade: move the players between the two teams' rosters. */
+  z.object({ action: z.literal("trade"), trade: tradeRequestSchema }),
 ]);
 export type CustomAction = z.infer<typeof customActionSchema>;
 
@@ -97,20 +117,3 @@ export const playerSearchSchema = z.object({
   limit: z.coerce.number().int().min(1).max(60).optional().default(40),
 });
 
-const playerIdList = z.array(playerId).max(30);
-
-export const tradeSideSchema = z.object({
-  teamId: z.number().int(),
-  sends: playerIdList,
-  drops: playerIdList.default([]),
-  adds: playerIdList.default([]),
-});
-
-export const tradeRequestSchema = z.object({
-  /** fetchedAt of the snapshot the user built the trade against. */
-  snapshotFetchedAt: z.string().max(64),
-  teamA: tradeSideSchema,
-  teamB: tradeSideSchema,
-});
-export type TradeRequest = z.infer<typeof tradeRequestSchema>;
-export type TradeSideRequest = z.infer<typeof tradeSideSchema>;
