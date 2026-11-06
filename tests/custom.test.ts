@@ -28,8 +28,8 @@ describe("player pool", () => {
     const client = poolClient(ffl, (u) => (seen = u));
     const pool = await fetchPlayerPool("football", 2026, client);
     expect(seen!.pathname).toBe("/apis/v3/games/ffl/seasons/2026/players");
-    expect(pool.entries.length).toBeGreaterThanOrEqual(6);
-    expect(pool.entries.length).toBeLessThanOrEqual(ffl.length);
+    // The fixture's 4 offensive players are kept; its 4 defensive players (LB/DL) have no slot in these presets.
+    expect(pool.entries.map((e) => e.player.name).sort()).toEqual(["Bo Melton", "Germie Bernard", "Jaydon Blue", "Luther Burden III"]);
     for (const { player } of pool.entries) {
       expect(player.projections.season?.stats).toBeTruthy();
       expect(player.position).not.toBe("?");
@@ -47,8 +47,8 @@ describe("player pool", () => {
     const without = searchPool(pool, "", items, 40, new Set([top.id]));
     expect(without.find((p) => p.id === top.id)).toBeUndefined();
     // name search
-    const named = searchPool(pool, "roquan", items, 40);
-    expect(named.every((p) => p.name.toLowerCase().includes("roquan"))).toBe(true);
+    const named = searchPool(pool, "burden", items, 40);
+    expect(named.map((p) => p.name)).toEqual(["Luther Burden III"]);
   });
 
   it("basketball pool parses season projections", async () => {

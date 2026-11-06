@@ -190,6 +190,19 @@ describe("normalization", () => {
     expect(p.season?.appliedTotal).toBe(200);
     expect(p.season?.appliedAverage).toBe(11.8);
   });
+
+  it("prefers the full-season line over ESPN's partial or empty season-level split-type-1 line", () => {
+    // Shape seen on real kickers and D/STs (e.g. Giants D/ST): the type-1 line follows the full one.
+    const full = { seasonId: 2026, scoringPeriodId: 0, statSourceId: 1, statSplitTypeId: 0, stats: { "95": 12, "99": 41 } };
+    const empty = { id: "112026null", seasonId: 2026, scoringPeriodId: 0, statSourceId: 1, statSplitTypeId: 1, stats: {} };
+    const partial = { ...empty, stats: { "95": 1 } };
+    expect(extractProjections([full, empty], 2026).season?.stats).toEqual(full.stats);
+    expect(extractProjections([full, partial], 2026).season?.stats).toEqual(full.stats);
+    expect(extractProjections([partial, full], 2026).season?.stats).toEqual(full.stats);
+    // Without a full-season line, a non-empty type-1 line is still used; an empty one never is.
+    expect(extractProjections([partial], 2026).season?.stats).toEqual(partial.stats);
+    expect(extractProjections([empty], 2026).season).toBeNull();
+  });
 });
 
 describe("EspnLeagueProvider", () => {

@@ -162,19 +162,30 @@ function toSplit(raw: RawStatSplit): StatSplit {
 /**
  * Extracts projected splits. Per espn-api: statSourceId 0 = actual, otherwise
  * projected; scoringPeriodId 0 = season aggregate; statSplitTypeId 2 skipped.
+ *
+ * For the season aggregate, the full-season line (statSplitTypeId 0) wins.
+ * Kickers, D/STs and some others also carry a season-level statSplitTypeId 1
+ * line (id "11{season}null") that is partial or empty; it's used only when no
+ * full-season line exists.
  */
 export function extractProjections(
   splits: RawStatSplit[] | undefined,
   season: number,
 ): PlayerProjectionData {
   const out: PlayerProjectionData = { byScoringPeriod: {}, season: null };
+  let seasonIsFull = false;
   for (const s of splits ?? []) {
     if (s.seasonId !== season) continue;
     if (s.statSourceId !== STAT_SOURCE_PROJECTED) continue;
     if (s.statSplitTypeId === 2) continue;
     if (s.scoringPeriodId === undefined) continue;
-    if (s.scoringPeriodId === 0) out.season = toSplit(s);
-    else out.byScoringPeriod[String(s.scoringPeriodId)] = toSplit(s);
+    if (s.scoringPeriodId === 0) {
+      const full = s.statSplitTypeId === 0;
+      if (full || (!seasonIsFull && Object.keys(s.stats ?? {}).length > 0)) {
+        out.season = toSplit(s);
+        seasonIsFull = full;
+      }
+    } else out.byScoringPeriod[String(s.scoringPeriodId)] = toSplit(s);
   }
   return out;
 }

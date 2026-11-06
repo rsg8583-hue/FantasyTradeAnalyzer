@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import type { Player, ScoringItem, Sport } from "@/lib/domain/types";
 import { AppError } from "@/lib/domain/errors";
+import { presetsForSport } from "@/lib/league/presets";
 import { scoreSplit } from "@/lib/projections/scoring";
 import { EspnClient, type EspnRequestContext } from "./client";
 import { normalizePlayer } from "./normalize";
@@ -42,6 +43,8 @@ export async function fetchPlayerPool(sport: Sport, season: number, client: Espn
   const ctx: EspnRequestContext = { sport, season, leagueId: "0", credentials: null };
   const raw = await client.get(ctx, { kind: "players", filter: poolFilter(season) }, poolArraySchema);
 
+  // Only players who can start somewhere in this sport's leagues (drops head coaches, punters, etc.).
+  const starterSlots = new Set(presetsForSport(sport).flatMap((p) => p.slots.filter((s) => s.kind === "starter").map((s) => s.slotId)));
   const byId = new Map<number, Player>();
   const entries: PoolEntry[] = [];
   for (const item of raw) {
@@ -51,6 +54,7 @@ export async function fetchPlayerPool(sport: Sport, season: number, client: Espn
     // Keep only players ESPN gives a usable season projection for.
     if (!player.projections.season?.stats || Object.keys(player.projections.season.stats).length === 0) continue;
     if (player.position === "?") continue;
+    if (!player.eligibleSlotIds.some((id) => starterSlots.has(id))) continue;
     byId.set(player.id, player);
     entries.push({ player, searchName: player.name.toLowerCase() });
   }
