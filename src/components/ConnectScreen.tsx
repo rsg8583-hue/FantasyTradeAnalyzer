@@ -3,8 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "@/lib/client/api";
+import type { AccountResponse } from "@/lib/domain/apiTypes";
 import type { Sport } from "@/lib/domain/types";
 import { defaultPresetId, presetsForSport } from "@/lib/league/presets";
+import { AccountChip, AuthForm, SavedLeagues } from "./AccountPanel";
 import { Alert, Button, Card, SectionTitle, Spinner, TopBar, cx } from "./ui";
 
 function defaultSeason(sport: Sport, now = new Date()): number {
@@ -18,6 +20,7 @@ function readNotice(): string | null {
   const reason = new URLSearchParams(window.location.search).get("reason");
   if (reason === "expired") return "Your session expired. Create a league again to continue.";
   if (reason === "disconnected") return "Your league was closed.";
+  if (reason === "signedout") return "You're signed out. Your saved leagues are still in your account.";
   return null;
 }
 
@@ -33,26 +36,43 @@ export function ConnectScreen() {
   return <LandingGate key={bfcacheId} />;
 }
 
+const GUEST: AccountResponse = { user: null, leagues: [] };
+
 function LandingGate() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
+  const [account, setAccount] = useState<AccountResponse>(GUEST);
 
+  // An open league (including a signed-in user's restored one) goes straight to the dashboard.
   useEffect(() => {
     api
       .session()
       .then(() => router.replace("/dashboard"))
-      .catch(() => setChecking(false));
+      .catch(() =>
+        api
+          .me()
+          .then(setAccount, () => setAccount(GUEST))
+          .finally(() => setChecking(false)),
+      );
   }, [router]);
+
+  async function logout() {
+    try {
+      await api.logout();
+    } finally {
+      setAccount(GUEST);
+    }
+  }
 
   return (
     <>
-      <TopBar />
+      <TopBar>{account.user && <AccountChip username={account.user.username} onLogout={() => void logout()} />}</TopBar>
       {checking ? (
         <main className="mx-auto flex w-full max-w-3xl flex-1 items-center justify-center p-6">
           <Spinner label="Checking for an existing league…" />
         </main>
       ) : (
-        <LandingPanel />
+        <LandingPanel account={account} onAccount={setAccount} />
       )}
     </>
   );
@@ -64,14 +84,15 @@ const STEPS = [
   { n: "3", title: "Compare any trade", text: "Pick two of your teams, swap players, and see each side's projected-points change." },
 ];
 
-function LandingPanel() {
+function LandingPanel({ account, onAccount }: { account: AccountResponse; onAccount: (a: AccountResponse) => void }) {
   const router = useRouter();
   const [name, setName] = useState("My League");
   const [sport, setSport] = useState<Sport>("football");
   const [season, setSeason] = useState(() => defaultSeason("football"));
   const [presetId, setPresetId] = useState(() => defaultPresetId("football"));
-  const [busy, setBusy] = useState<null | "create" | "demo">(null);
+  const [busy, setBusy] = useState<null | "create" | "demo" | "open">(null);
   const [error, setError] = useState<string | null>(null);
+  const [accountError, setAccountError] = useState<string | null>(null);
   const [notice] = useState(readNotice);
 
   const years = Array.from({ length: defaultSeason("basketball") - 2018 + 1 }, (_, i) => defaultSeason("basketball") - i);
@@ -96,6 +117,28 @@ function LandingPanel() {
     }
   }
 
+  /** After signing in, reopen the user's last league if they had one open; otherwise list their leagues. */
+  async function onSignedIn() {
+    try {
+      await api.session();
+      router.push("/dashboard");
+    } catch {
+      onAccount(await api.me().catch(() => GUEST));
+    }
+  }
+
+  async function openLeague(id: number) {
+    setAccountError(null);
+    setBusy("open");
+    try {
+      await api.openLeague(id);
+      router.push("/dashboard");
+    } catch (err) {
+      setAccountError(err instanceof ApiError ? err.message : "Could not open the league.");
+      setBusy(null);
+    }
+  }
+
   async function startDemo(s: Sport) {
     setError(null);
     setBusy("demo");
@@ -116,7 +159,7 @@ function LandingPanel() {
             Football · Basketball · Live ESPN projections
           </p>
           <h1 className="mt-4 max-w-2xl text-3xl font-bold tracking-tight sm:text-5xl">
-            Build teams. Compare trades. <span className="text-gold">No league login.</span>
+            Build teams. Compare trades. <span className="text-gold">No ESPN login.</span>
           </h1>
           <p className="mt-4 max-w-2xl text-base text-navy-soft sm:text-lg">
             Create your own teams from ESPN&apos;s real player pool, then see how any trade changes each team&apos;s projected points.
@@ -190,10 +233,29 @@ function LandingPanel() {
                 </Button>
                 {busy === "create" && <Spinner label="Fetching the ESPN player pool…" />}
               </div>
+              <p className="text-xs text-fg-soft">
+                {account.user
+                  ? "This league will be saved to your account."
+                  : "Guest leagues are lost after 2 hours idle or a server restart. Sign in to save yours."}
+              </p>
             </form>
           </Card>
 
           <aside className="space-y-4">
+            <Card aria-labelledby="account-heading">
+              <SectionTitle id="account-heading" as="h2">{account.user ? "Your leagues" : "Save your leagues"}</SectionTitle>
+              <div className="mt-3">
+                {account.user ? (
+                  <SavedLeagues account={account} onOpen={(id) => void openLeague(id)} onChange={onAccount} disabled={busy !== null} />
+                ) : (
+                  <>
+                    <p className="mb-3 text-sm text-fg-soft">Sign in to keep your leagues through refreshes and restarts, and open them from any device.</p>
+                    <AuthForm onSignedIn={onSignedIn} idPrefix="landing-auth" />
+                  </>
+                )}
+                {accountError && <div className="mt-2"><Alert tone="bad" role="alert">{accountError}</Alert></div>}
+              </div>
+            </Card>
             {STEPS.map((s) => (
               <Card key={s.n} as="div" className="flex gap-3">
                 <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-xl bg-navy text-base font-bold text-gold">{s.n}</span>

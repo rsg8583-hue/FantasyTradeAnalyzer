@@ -72,6 +72,26 @@ export const customActionSchema = z.discriminatedUnion("action", [
 ]);
 export type CustomAction = z.infer<typeof customActionSchema>;
 
+const usernameSchema = z
+  .string()
+  .trim()
+  .min(3, "Usernames are at least 3 characters.")
+  .max(32, "Usernames are at most 32 characters.")
+  .regex(/^[A-Za-z0-9_.-]+$/, "Use only letters, numbers, dots, dashes, and underscores in your username.");
+
+export const signupRequestSchema = z.object({
+  username: usernameSchema,
+  password: z.string().min(8, "Passwords are at least 8 characters.").max(200, "Passwords are at most 200 characters."),
+});
+
+/** Login doesn't re-apply the signup rules, so a wrong-format entry just fails as "incorrect". */
+export const loginRequestSchema = z.object({
+  username: z.string().trim().min(1, "Enter your username.").max(64),
+  password: z.string().min(1, "Enter your password.").max(200),
+});
+
+export const savedLeagueRequestSchema = z.object({ id: z.number().int().positive() });
+
 export const playerSearchSchema = z.object({
   q: z.string().trim().max(60).optional().default(""),
   limit: z.coerce.number().int().min(1).max(60).optional().default(40),

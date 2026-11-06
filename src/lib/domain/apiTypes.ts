@@ -2,6 +2,7 @@ import type { AppErrorCode } from "./errors";
 import type { LeagueLocator } from "./provider";
 import type { LeagueSnapshot } from "./types";
 import type { CustomLeague } from "@/lib/custom/types";
+import type { SavedLeagueSummary } from "@/lib/accounts/store";
 
 export interface SyncStatusDto {
   lastSuccessAt: string | null;
@@ -20,6 +21,13 @@ export interface LeagueStateResponse {
   snapshot: LeagueSnapshot | null;
   sync: SyncStatusDto;
   customLeague: CustomLeague | null;
+  /** Signed-in user, and whether this league is saved to their account. */
+  account: { username: string; saved: boolean } | null;
+}
+
+export interface AccountResponse {
+  user: { username: string } | null;
+  leagues: SavedLeagueSummary[];
 }
 
 export interface PlayerSearchResponse {

@@ -7,6 +7,7 @@ The app is analysis only. It never proposes, accepts, or submits trades.
 - **Live ESPN projections.** Players and their full-season projections come from ESPN's public player endpoint. You pick a scoring preset (PPR, Half-PPR, Standard, or a basketball points preset); the engine scores ESPN's projected stats with it.
 - **Deterministic numbers.** Optimal lineups are recomputed before and after the trade, using your league's scoring and lineup rules.
 - **AI explanations (optional).** OpenAI explains the computed results. It cannot change them, and its output is rejected if it contradicts them.
+- **Accounts (optional).** Sign in with a username and password to save leagues, keep them through refreshes and server restarts, and open them from any device. Guests can still use everything; their leagues just aren't saved.
 - **Demo mode.** A clearly labeled demo uses fictional fixture data.
 
 See [docs/CALCULATION.md](docs/CALCULATION.md) for the full methodology.
@@ -35,6 +36,7 @@ npm run dev                  # http://localhost:3000
 | `OPENAI_API_KEY` | No | Without it, results show a deterministic explanation and an "AI not configured" notice. |
 | `OPENAI_MODEL` | With the key | A Responses-API model that supports structured outputs. |
 | `AI_PROVIDER` | No | Defaults to `openai` (the only provider implemented). |
+| `DATABASE_PATH` | No | SQLite file for accounts and saved leagues. Defaults to `data/app.db` (created on first use, gitignored). |
 
 No ESPN credentials are ever needed or stored. The player pool is public.
 
@@ -51,6 +53,15 @@ No ESPN credentials are ever needed or stored. The player pool is public.
 4. Results show each team's projected-points change, a before/after optimal lineup, a verdict, and an AI explanation.
 5. **Refresh league** re-fetches ESPN's projections. **Close league** ends the session.
 
+### Accounts
+
+Use **Sign in** / **Create account** on the home page, or **Sign in to save** on a guest league's dashboard.
+
+- Leagues you create while signed in are saved, and every edit is saved as you make it. Signing in while building a guest league saves that league to your account.
+- The league you have open is reopened automatically after a refresh, a server restart, or on another device.
+- **Close league** returns to **Your leagues** without deleting anything. Delete a league from that list.
+- Demos are never saved.
+
 Use **Demo: football** or **Demo: basketball** to try the app without building anything. Demo data is fictional and never substituted for real data.
 
 ## Architecture
@@ -62,6 +73,7 @@ src/lib/league/       Scoring + roster presets (PPR, Half-PPR, Standard, basketb
 src/lib/custom/       Custom-league model, mutation rules, and the snapshot builder.
 src/lib/demo/         Fictional fixture provider (same LeagueProvider interface).
 src/lib/session/      Expiring server-side session store (opaque id → league + snapshot).
+src/lib/accounts/     Password hashing and the SQLite store for users, login tokens, and saved leagues.
 src/lib/server/       Route helpers (origin checks, cookies, rate limits) and league sync.
 src/lib/projections/  Projection providers: full-season (custom) and weekly/daily (demo), plus scoring.
 src/lib/engine/       Lineup optimizer (Hungarian) and trade validation/calculation.
@@ -69,6 +81,7 @@ src/lib/ai/           AI provider interface, OpenAI provider, minimal input buil
                       validation, deterministic fallback.
 src/components/       UI
 src/app/api/          custom (create/edit) · players (search) · demo · session · league · analyze · explain
+                      · auth (signup/login/logout/me) · leagues (open/delete saved)
 ```
 
 The old ESPN **league-linking** adapter (`src/lib/espn/provider.ts`, `leagueInput.ts`) and its tests are retained but no longer exposed in the UI. The app now reads only ESPN's public player pool.
@@ -77,10 +90,11 @@ The old ESPN **league-linking** adapter (`src/lib/espn/provider.ts`, `leagueInpu
 
 - **No ESPN credentials.** The app uses ESPN's public player pool, so there are no cookies or passwords to handle.
 - **Session.** A league lives in server memory, keyed by a random 256-bit session id. The browser holds that id in an `HttpOnly`, `SameSite=Strict` cookie (`Secure` outside localhost). Sessions expire after 2 hours idle or 12 hours total.
+- **Accounts.** Passwords are hashed with scrypt (random salt per user). Signing in sets a separate 30-day `HttpOnly`, `SameSite=Strict` cookie holding a random token; the database stores only its SHA-256 hash. Every saved-league query is scoped to the signed-in user. Sign-in and sign-up attempts are limited to 10 per username and 30 per address per 15 minutes, and unknown usernames take as long to reject as wrong passwords.
 - **Requests.** State-changing routes require a same-origin `Origin` header. Inputs are schema-validated.
 - **Outbound ESPN calls.** URLs are built only from an allowlisted host (`lm-api-reads.fantasy.espn.com`), fixed path patterns, and allowlisted views/filters. Redirects are not followed.
 - **Rate limits per session.** Player pool: cached 6 hours, shared across callers. Search: 60/min. Edits: 120/min. Analyze: 30/min. AI explanations: 10 per 10 minutes, cached per trade.
-- **Deployment caveat.** The in-memory session store and player-pool cache are for a single server instance. Running several instances needs a shared store (the session code has an interface for one). A restart clears both.
+- **Deployment caveat.** The in-memory session store and player-pool cache are for a single server instance. Running several instances needs a shared store (the session code has an interface for one). A restart clears both, but signed-in users' leagues are restored from the database. The SQLite file needs a persistent disk, so serverless hosts that discard local files (e.g. Vercel) would need a hosted database instead.
 
 ## ESPN data: unofficial, with limitations
 

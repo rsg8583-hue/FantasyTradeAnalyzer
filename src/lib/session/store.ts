@@ -27,6 +27,10 @@ export interface SessionData {
   credentials: EspnCredentials | null;
   /** Editable league definition for custom mode; null otherwise. */
   customLeague: CustomLeague | null;
+  /** Signed-in owner, or null for a guest. */
+  userId: number | null;
+  /** Row id of the saved copy of customLeague; edits are written back to it. */
+  savedLeagueId: number | null;
   snapshot: LeagueSnapshot | null;
   sync: SyncState;
   inflight: Promise<LeagueSnapshot> | null;
@@ -42,10 +46,16 @@ export type SessionLookup =
   | { status: "expired" }
   | { status: "missing" };
 
+export type SessionInit = Pick<SessionData, "mode" | "locator" | "credentials" | "customLeague"> &
+  Partial<Pick<SessionData, "userId" | "savedLeagueId">>;
+
 export interface SessionStore {
-  create(init: Pick<SessionData, "mode" | "locator" | "credentials" | "customLeague">): SessionData;
+  create(init: SessionInit): SessionData;
   get(id: string): SessionLookup;
+  /** The live session owned by this user, if any. */
+  forUser(userId: number): SessionData | null;
   delete(id: string): void;
+  deleteForUser(userId: number): void;
 }
 
 /**
@@ -61,7 +71,7 @@ export class MemorySessionStore implements SessionStore {
 
   constructor(private readonly now: () => number = Date.now) {}
 
-  create(init: Pick<SessionData, "mode" | "locator" | "credentials" | "customLeague">): SessionData {
+  create(init: SessionInit): SessionData {
     this.sweep();
     const t = this.now();
     const session: SessionData = {
@@ -69,6 +79,8 @@ export class MemorySessionStore implements SessionStore {
       createdAt: t,
       lastAccessAt: t,
       expiresAt: t + ABSOLUTE_TTL_MS,
+      userId: null,
+      savedLeagueId: null,
       ...init,
       snapshot: null,
       sync: { lastSuccessAt: null, lastAttemptAt: null, lastError: null },
@@ -90,6 +102,19 @@ export class MemorySessionStore implements SessionStore {
     }
     s.lastAccessAt = t;
     return { status: "ok", session: s };
+  }
+
+  forUser(userId: number): SessionData | null {
+    for (const s of this.sessions.values()) {
+      if (s.userId !== userId) continue;
+      const found = this.get(s.id);
+      if (found.status === "ok") return found.session;
+    }
+    return null;
+  }
+
+  deleteForUser(userId: number): void {
+    for (const s of [...this.sessions.values()]) if (s.userId === userId) this.delete(s.id);
   }
 
   delete(id: string): void {

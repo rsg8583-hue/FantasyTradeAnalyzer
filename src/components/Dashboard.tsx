@@ -9,6 +9,7 @@ import { usePolling } from "@/lib/client/usePolling";
 import type { LeagueStateResponse } from "@/lib/domain/apiTypes";
 import type { TradeAnalysis } from "@/lib/engine/types";
 import { projectionProviderFor } from "@/lib/projections/select";
+import { AccountChip, AuthForm } from "./AccountPanel";
 import { LeagueBuilder } from "./LeagueBuilder";
 import { LeagueHeader } from "./LeagueHeader";
 import { RosterView } from "./RosterView";
@@ -57,6 +58,7 @@ function DashboardView() {
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [explanation, setExplanation] = useState<ExplainState>({ status: "idle" });
+  const [showSignIn, setShowSignIn] = useState(false);
   const draftRef = useRef(draft);
   const lastFetchedAt = useRef<string | null>(null);
   const explainSeq = useRef(0);
@@ -177,6 +179,24 @@ function DashboardView() {
     }
   }
 
+  async function logout() {
+    try {
+      await api.logout();
+    } finally {
+      router.replace("/?reason=signedout");
+    }
+  }
+
+  /** Signing in saves this guest league to the account; reload state to pick that up. */
+  async function onSignedIn() {
+    setShowSignIn(false);
+    try {
+      applyState(await api.session());
+    } catch (e) {
+      handleError(e);
+    }
+  }
+
   function changePoll(ms: number) {
     setPollMs(ms);
     try {
@@ -226,7 +246,8 @@ function DashboardView() {
   return (
     <>
     <TopBar>
-      <span className="hidden truncate text-sm text-navy-soft sm:block">{state.snapshot?.settings.name}</span>
+      <span className="ml-auto hidden min-w-0 truncate text-sm text-navy-soft md:block">{state.snapshot?.settings.name}</span>
+      {state.account && <AccountChip username={state.account.username} onLogout={() => void logout()} />}
     </TopBar>
     <main className="mx-auto w-full max-w-7xl flex-1 space-y-5 px-4 py-6">
       <LeagueHeader
@@ -239,6 +260,26 @@ function DashboardView() {
         onReconnect={() => void disconnect()}
         clientError={clientError}
       />
+
+      {state.mode === "custom" && !state.account && (
+        <Alert
+          tone="info"
+          role="status"
+          title="This league isn't saved"
+          action={
+            showSignIn ? (
+              <div className="max-w-sm pt-1">
+                <AuthForm onSignedIn={onSignedIn} idPrefix="save-auth" />
+                <Button variant="ghost" className="mt-2" onClick={() => setShowSignIn(false)}>Cancel</Button>
+              </div>
+            ) : (
+              <Button variant="primary" onClick={() => setShowSignIn(true)}>Sign in to save</Button>
+            )
+          }
+        >
+          Guest leagues are lost after 2 hours idle or if the server restarts. Sign in or create an account to keep it.
+        </Alert>
+      )}
 
       {!snapshot ? (
         <Card>

@@ -1,7 +1,9 @@
 import "server-only";
 import { NextResponse, type NextRequest } from "next/server";
 import { AppError, isAppError } from "@/lib/domain/errors";
-import { ABSOLUTE_TTL_MS, sessionStore, type SessionData } from "@/lib/session/store";
+import { AUTH_TTL_MS } from "@/lib/accounts/store";
+import { ABSOLUTE_TTL_MS, sessionStore, type SessionData, type SessionInit } from "@/lib/session/store";
+import { AUTH_COOKIE, currentUser, restoreUserSession } from "./accounts";
 
 export const SESSION_COOKIE = "fta_session";
 
@@ -42,14 +44,22 @@ function isLocalRequest(req: NextRequest): boolean {
 }
 
 /** Secure everywhere except plain-HTTP localhost (some browsers drop Secure cookies there). */
-export function setSessionCookie(res: NextResponse, session: SessionData, req: NextRequest) {
-  res.cookies.set(SESSION_COOKIE, session.id, {
+function setCookie(res: NextResponse, req: NextRequest, name: string, value: string, maxAgeMs: number) {
+  res.cookies.set(name, value, {
     httpOnly: true,
     secure: isProd() ? !isLocalRequest(req) || req.nextUrl.protocol === "https:" : false,
     sameSite: "strict",
     path: "/",
-    maxAge: Math.floor(ABSOLUTE_TTL_MS / 1000),
+    maxAge: Math.floor(maxAgeMs / 1000),
   });
+}
+
+export function setSessionCookie(res: NextResponse, session: SessionData, req: NextRequest) {
+  setCookie(res, req, SESSION_COOKIE, session.id, ABSOLUTE_TTL_MS);
+}
+
+export function setAuthCookie(res: NextResponse, token: string, req: NextRequest) {
+  setCookie(res, req, AUTH_COOKIE, token, AUTH_TTL_MS);
 }
 
 /** Expiring a cookie does not need the Secure flag, which keeps this valid on localhost too. */
@@ -57,17 +67,43 @@ export function clearSessionCookie(res: NextResponse) {
   res.cookies.set(SESSION_COOKIE, "", { httpOnly: true, sameSite: "strict", path: "/", maxAge: 0 });
 }
 
+export function clearAuthCookie(res: NextResponse) {
+  res.cookies.set(AUTH_COOKIE, "", { httpOnly: true, sameSite: "strict", path: "/", maxAge: 0 });
+}
+
+/**
+ * Replaces the caller's current session (and, when signed in, the user's
+ * sessions on other devices) with a new one.
+ */
+export function startSession(req: NextRequest, init: SessionInit): SessionData {
+  const store = sessionStore();
+  const previous = req.cookies.get(SESSION_COOKIE)?.value;
+  if (previous) store.delete(previous);
+  if (init.userId != null) store.deleteForUser(init.userId);
+  return store.create(init);
+}
+
+/**
+ * The caller's session. A signed-in user whose session is gone (restart, idle
+ * expiry, another device) gets their active saved league back instead of an
+ * error; a session belonging to someone else is never returned.
+ */
 export function requireSession(req: NextRequest): SessionData {
+  const user = currentUser(req);
   const id = req.cookies.get(SESSION_COOKIE)?.value;
-  if (!id) throw new AppError("NO_SESSION", "Not connected to a league.");
-  const found = sessionStore().get(id);
+  const found = id ? sessionStore().get(id) : null;
+  if (found?.status === "ok" && found.session.userId === (user?.id ?? null)) return found.session;
+  const restored = user ? restoreUserSession(user.id) : null;
+  if (restored) return restored;
+  if (!found) throw new AppError("NO_SESSION", "Not connected to a league.");
   if (found.status === "expired") {
     throw new AppError("SESSION_EXPIRED", "Your session expired and stored credentials were deleted. Reconnect to continue.");
   }
   if (found.status === "missing") {
     throw new AppError("NO_SESSION", "Not connected to a league. The server may have restarted; reconnect to continue.");
   }
-  return found.session;
+  // A live session owned by a different user (or a guest's, once signed in).
+  throw new AppError("NO_SESSION", "Not connected to a league.");
 }
 
 /**

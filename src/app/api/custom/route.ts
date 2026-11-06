@@ -5,11 +5,12 @@ import { applyAction, newCustomLeague } from "@/lib/custom/mutate";
 import { presetById } from "@/lib/league/presets";
 import { getPlayerPool } from "@/lib/espn/playerPool";
 import { buildCustomSnapshot } from "@/lib/custom/provider";
-import { SESSION_COOKIE, allowRate, assertSameOrigin, errorResponse, noStore, readJson, requireSession, setSessionCookie } from "@/lib/server/http";
+import { accountStore } from "@/lib/accounts/store";
+import { currentUser, persistLeague } from "@/lib/server/accounts";
+import { allowRate, assertSameOrigin, errorResponse, noStore, readJson, requireSession, setSessionCookie, startSession } from "@/lib/server/http";
 import { leagueState } from "@/lib/server/state";
-import { sessionStore } from "@/lib/session/store";
 
-/** Create a new custom league (starts a session). */
+/** Create a new custom league (starts a session). Signed-in users get it saved to their account. */
 export async function POST(req: NextRequest) {
   try {
     assertSameOrigin(req);
@@ -21,15 +22,20 @@ export async function POST(req: NextRequest) {
     // Fail fast if ESPN's projection pool is unreachable, so we never show an empty league.
     await getPlayerPool(parsed.data.sport, parsed.data.season);
 
-    const store = sessionStore();
-    const previous = req.cookies.get(SESSION_COOKIE)?.value;
-    if (previous) store.delete(previous);
+    const user = currentUser(req);
     const league = newCustomLeague(parsed.data);
-    const session = store.create({
+    let savedLeagueId: number | null = null;
+    if (user) {
+      savedLeagueId = accountStore().createLeague(user.id, league);
+      accountStore().setActiveLeague(user.id, savedLeagueId);
+    }
+    const session = startSession(req, {
       mode: "custom",
       locator: { leagueId: "custom", sport: parsed.data.sport, season: parsed.data.season },
       credentials: null,
       customLeague: league,
+      userId: user?.id ?? null,
+      savedLeagueId,
     });
     await rebuild(session);
     const res = NextResponse.json(leagueState(session), { headers: noStore });
@@ -52,6 +58,7 @@ export async function PATCH(req: NextRequest) {
 
     const pool = await getPlayerPool(session.customLeague.sport, session.customLeague.season);
     applyAction(session.customLeague, parsed.data, (id) => pool.byId.has(id));
+    persistLeague(session);
     await rebuild(session);
     return NextResponse.json(leagueState(session), { headers: noStore });
   } catch (e) {

@@ -1,4 +1,4 @@
-import type { ApiErrorBody, LeagueStateResponse, PlayerSearchResponse } from "@/lib/domain/apiTypes";
+import type { AccountResponse, ApiErrorBody, LeagueStateResponse, PlayerSearchResponse } from "@/lib/domain/apiTypes";
 import type { CustomAction, TradeRequest } from "@/lib/domain/apiSchemas";
 import type { TradeAnalysis } from "@/lib/engine/types";
 import type { ExplanationResult } from "@/lib/ai/schema";
@@ -42,6 +42,12 @@ export const api = {
   refresh: () => call<LeagueStateResponse>("/api/league", { method: "POST" }),
   analyze: (req: TradeRequest) => call<TradeAnalysis>("/api/analyze", { method: "POST", body: JSON.stringify(req) }),
   explain: (req: TradeRequest) => call<ExplanationResult>("/api/explain", { method: "POST", body: JSON.stringify(req) }),
+  me: () => call<AccountResponse>("/api/auth/me"),
+  signup: (body: { username: string; password: string }) => call<{ user: { username: string } }>("/api/auth/signup", { method: "POST", body: JSON.stringify(body) }),
+  login: (body: { username: string; password: string }) => call<{ user: { username: string } }>("/api/auth/login", { method: "POST", body: JSON.stringify(body) }),
+  logout: () => call<{ user: null }>("/api/auth/logout", { method: "POST" }),
+  openLeague: (id: number) => call<LeagueStateResponse>("/api/leagues", { method: "POST", body: JSON.stringify({ id }) }),
+  deleteLeague: (id: number) => call<AccountResponse>("/api/leagues", { method: "DELETE", body: JSON.stringify({ id }) }),
 };
 
 export const SESSION_GONE = new Set(["SESSION_EXPIRED", "NO_SESSION"]);
